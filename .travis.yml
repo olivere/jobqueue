@@ -1,0 +1,10 @@
+sudo: false
+language: go
+go:
+  - 1.6
+services:
+  - mysql
+install:
+  - go get github.com/satori/go.uuid
+  - go get github.com/go-sql-driver/mysql
+  - go get github.com/jinzhu/gorm

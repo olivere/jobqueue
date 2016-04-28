@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Jobqueue Administration</title>
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+	<link rel="stylesheet" type="text/css" href="/jobqueue.css">
+</head>
+<body>
+
+<nav class="navbar navbar-default">
+  <div class="container-fluid">
+    <!-- Brand and toggle get grouped for better mobile display -->
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="#">Jobqueue</a>
+    </div>
+
+    <!-- Collect the nav links, forms, and other content for toggling -->
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li class="active"><a href="/">Overview</a></li>
+      </ul>
+      <p class="navbar-text navbar-right" id="CONNECTED" style="color:green; display:none">
+				<span class="glyphicon glyphicon-signal" style="color:green"></span>&nbsp;Connected
+			</p>
+      <p class="navbar-text navbar-right" id="DISCONNECTED" style="color:red">
+				<span class="glyphicon glyphicon-refresh"></span>&nbsp;Disconnected.&nbsp;Retrying in 5s&hellip;
+			</p>
+    </div><!-- /.navbar-collapse -->
+  </div><!-- /.container-fluid -->
+</nav>
+
+<div class="alert alert-danger" role="alert" id="warning">
+	<strong>Your browser does not support WebSockets.</strong>
+</div>
+
+<div class="container-fluid">
+	<div class="row">
+		<div class="col-xs-12 col-sm-3">
+			<h3><span class="badge" id="WAITING">0</span>Waiting</h3>
+			<ul class="list-group" id="JOBS_WAITING">
+			</ul>
+		</div>
+		<div class="col-xs-12 col-sm-3">
+			<h3><span class="badge" id="WORKING">0</span>Working</h3>
+			<ul class="list-group" id="JOBS_WORKING">
+			</ul>
+		</div>
+		<div class="col-xs-12 col-sm-3">
+			<h3><span class="badge badge-success" id="SUCCEEDED">0</span>Succeeded</h3>
+			<ul class="list-group" id="JOBS_SUCCEEDED">
+			</ul>
+		</div>
+		<div class="col-xs-12 col-sm-3">
+			<h3><span class="badge badge-danger" id="FAILED">0</span>Failed</h3>
+			<ul class="list-group" id="JOBS_FAILED">
+			</ul>
+		</div>
+	</div>
+</div>
+
+<div id="JOB_DETAILS_DIALOG" class="modal fade" tabindex="-1" role="dialog">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        <h4 class="modal-title">Job Details</h4>
+      </div>
+      <div class="modal-body">
+      	<strong id="JOB_DETAILS_MESSAGE"></strong>
+      	<p id="JOB_DETAILS_JOB"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+<script src="//underscorejs.org/underscore-min.js"></script>
+<script src="/jobqueue.js"></script>
+</body>
+</html>
