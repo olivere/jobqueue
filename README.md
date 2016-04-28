@@ -71,11 +71,24 @@ See the tests for more details on using jobqueue.
 
 Ensure the tests succeed with `go test`. You may have to install dependencies.
 
-Run an end-to-end test with `cd e2e && go run main.go`. It simulates a real worker.
+You can run a simulation of a real worker like so:
+
+```sh
+$ cd e2e
+$ go run main.go
+```
+
 Play with the options: `go run e2e/main.go -h`.
 
-While running the end-to-end tests, open up a second console and run
-`cd ui && go run main.go`. Then direct your web browser to `127.0.0.1:12345`.
+Then open a second console and watch the worker doing its job:
+
+```sh
+$ cd ui
+$ go run main.go
+
+```
+
+Then open your web browser at [http://127.0.0.1:12345](http://127.0.0.1:12345).
 
 ![Screenshot](https://raw.githubusercontent.com/olivere/jobqueue/master/doc/screenshot1.png)
 
