@@ -94,4 +94,4 @@ Then open your web browser at [http://127.0.0.1:12345](http://127.0.0.1:12345).
 
 # License
 
-MIT License. See LICENSE file for details.
+MIT License. See [LICENSE](https://olivere.mit-license.org/) file for details.
