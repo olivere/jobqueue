@@ -8,9 +8,10 @@ import (
 )
 
 func ExampleManager() {
-	// Create a new manager with 10 concurrent workers
+	// Create a new manager with 10 concurrent workers for rank 0 and 2 for rank 1
 	m := jobqueue.New(
-		jobqueue.SetConcurrency(10),
+		jobqueue.SetConcurrency(0, 10),
+		jobqueue.SetConcurrency(1, 2),
 	)
 
 	// Register the processor for topic "crawl"

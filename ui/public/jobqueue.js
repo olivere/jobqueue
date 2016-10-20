@@ -15,7 +15,7 @@ $(function() {
         if (job.state) {
           html = html + '<span class="badge">' + job.state + '</span>';
         }
-        html = html + '<a onclick="lookupJob(\'' + job.id + '\')">' + (job.cid || job.id) + '</a>';
+        html = html + '<a onclick="lookupJob(\'' + job.id + '\')">' + (job.cid || job.id) + ' in rank ' + job.rank + '</a>';
         html = html + '</li>';
         $(domid).append(html);
       });
@@ -107,6 +107,7 @@ $(function() {
               html += '<tr><td>ID</td><td>' + e.job.id + '</td></tr>';
               html += '<tr><td>Topic</td><td>' + e.job.topic + '</td></tr>';
               html += '<tr><td>State</td><td>' + e.job.state + '</td></tr>';
+              html += '<tr><td>Rank</td><td>' + e.job.rank + '</td></tr>';
               html += '<tr><td>CID</td><td>' + e.job.cid + '</td></tr>';
               html += '<tr><td>Created</td><td>' + unixNanoToTime(e.job.created) + '</td></tr>';
               html += '<tr><td>Started</td><td>' + unixNanoToTime(e.job.started) + '</td></tr>';

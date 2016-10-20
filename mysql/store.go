@@ -35,6 +35,9 @@ index ix_jobs_created (created),
 index ix_jobs_started (started),
 index ix_jobs_completed (completed),
 index ix_jobs_last_mod (last_mod));`
+
+	// add rank column and index on (rank, priority)
+	mysqlUpdate001 = `ALTER TABLE jobqueue_jobs ADD rank INT NOT NULL DEFAULT '0', ADD INDEX ix_jobs_rank_priority (rank, priority);`
 )
 
 // Store represents a persistent MySQL storage implementation.
@@ -86,6 +89,25 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	_, err = st.db.DB().Exec(mysqlSchema)
 	if err != nil {
 		return nil, err
+	}
+	// Apply update 001
+	var count int64
+	err = st.db.DB().QueryRow(`
+	SELECT COUNT(*) AS cnt
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME = 'jobqueue_jobs'
+		AND COLUMN_NAME = 'rank'
+	`, dbname).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		// Apply migration
+		_, err = st.db.DB().Exec(mysqlUpdate001)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return st, nil
 }
@@ -154,7 +176,7 @@ func (s *Store) Update(job *jobqueue.Job) error {
 func (s *Store) Next() (*jobqueue.Job, error) {
 	var j Job
 	err := s.db.Where("state = ?", jobqueue.Waiting).
-		Order("priority desc").
+		Order("rank desc, priority desc").
 		First(&j).
 		Error
 	if err == gorm.ErrRecordNotFound {
@@ -250,6 +272,7 @@ type Job struct {
 	Topic         string
 	State         string
 	Args          sql.NullString
+	Rank          int
 	Priority      int64
 	Retry         int
 	MaxRetry      int
@@ -278,6 +301,7 @@ func newJob(job *jobqueue.Job) (*Job, error) {
 		Topic:         job.Topic,
 		State:         job.State,
 		Args:          sql.NullString{String: args, Valid: args != ""},
+		Rank:          job.Rank,
 		Priority:      job.Priority,
 		Retry:         job.Retry,
 		MaxRetry:      job.MaxRetry,
@@ -300,6 +324,7 @@ func (j *Job) ToJob() (*jobqueue.Job, error) {
 		Topic:         j.Topic,
 		State:         j.State,
 		Args:          args,
+		Rank:          j.Rank,
 		Priority:      j.Priority,
 		Retry:         j.Retry,
 		MaxRetry:      j.MaxRetry,

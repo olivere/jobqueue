@@ -25,7 +25,7 @@ func (w *worker) run() {
 	defer w.m.workersWg.Done()
 	for {
 		select {
-		case job, more := <-w.m.jobc:
+		case job, more := <-w.jobc:
 			if !more {
 				// jobc has been closed
 				return
@@ -42,7 +42,7 @@ func (w *worker) run() {
 func (w *worker) process(job *Job) error {
 	defer func() {
 		w.m.mu.Lock()
-		w.m.working--
+		w.m.working[job.Rank]--
 		w.m.mu.Unlock()
 	}()
 

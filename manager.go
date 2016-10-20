@@ -27,13 +27,13 @@ type Manager struct {
 
 	mu          sync.Mutex           // guards the following block
 	tm          map[string]Processor // maps topic to processor
-	concurrency int                  // number of parallel workers
-	working     int                  // number of busy workers
+	concurrency map[int]int          // number of parallel workers
+	working     map[int]int          // number of busy workers
 	started     bool
-	workers     []*worker
+	workers     map[int][]*worker
 	stopSched   chan struct{} // stop signal for scheduler
 	workersWg   sync.WaitGroup
-	jobc        chan *Job
+	jobc        map[int]chan *Job
 
 	testManagerStarted   func() // testing hook
 	testManagerStopped   func() // testing hook
@@ -54,7 +54,8 @@ func New(options ...ManagerOption) *Manager {
 		st:                   NewInMemoryStore(),
 		backoff:              exponentialBackoff,
 		tm:                   make(map[string]Processor),
-		concurrency:          defaultConcurrency,
+		concurrency:          map[int]int{0: defaultConcurrency},
+		working:              map[int]int{0: 0},
 		testManagerStarted:   nop,
 		testManagerStopped:   nop,
 		testSchedulerStarted: nop,
@@ -104,14 +105,15 @@ func SetBackoffFunc(fn BackoffFunc) ManagerOption {
 }
 
 // SetConcurrency sets the maximum number of workers that will be run at
-// the same time. Concurrency must be greater or equal to 1 and is 5 by
-// default.
-func SetConcurrency(n int) ManagerOption {
+// the same time, for a given rank. Concurrency must be greater or equal
+// to 1 and is 5 by default.
+func SetConcurrency(rank, n int) ManagerOption {
 	return func(m *Manager) {
 		if n <= 1 {
-			m.concurrency = 1
+			m.concurrency[rank] = 1
+		} else {
+			m.concurrency[rank] = n
 		}
-		m.concurrency = n
 	}
 }
 
@@ -143,11 +145,15 @@ func (m *Manager) Start() error {
 		return err
 	}
 
-	m.jobc = make(chan *Job, m.concurrency)
-	m.workers = make([]*worker, m.concurrency)
-	for i := 0; i < m.concurrency; i++ {
-		m.workersWg.Add(1)
-		m.workers[i] = newWorker(m, m.jobc)
+	m.jobc = make(map[int]chan *Job)
+	m.workers = make(map[int][]*worker)
+	for rank, concurrency := range m.concurrency {
+		m.jobc[rank] = make(chan *Job, concurrency)
+		m.workers[rank] = make([]*worker, concurrency)
+		for i := 0; i < m.concurrency[rank]; i++ {
+			m.workersWg.Add(1)
+			m.workers[rank][i] = newWorker(m, m.jobc[rank])
+		}
 	}
 
 	m.stopSched = make(chan struct{})
@@ -186,7 +192,11 @@ func (m *Manager) CloseWithTimeout(timeout time.Duration) error {
 	m.stopSched <- struct{}{}
 	<-m.stopSched
 	close(m.stopSched)
-	close(m.jobc)
+	m.mu.Lock()
+	for rank := range m.jobc {
+		close(m.jobc[rank])
+	}
+	m.mu.Unlock()
 
 	// Wait for all workers to complete?
 	if timeout.Nanoseconds() < 0 {
@@ -277,14 +287,6 @@ func (m *Manager) schedule() {
 		case <-t.C:
 			// Fill up available worker slots with jobs
 			for {
-				m.mu.Lock()
-				concurrency := m.concurrency
-				working := m.working
-				m.mu.Unlock()
-				if working >= concurrency {
-					// All workers busy
-					break
-				}
 				job, err := m.st.Next()
 				if err == ErrNotFound {
 					break
@@ -297,7 +299,16 @@ func (m *Manager) schedule() {
 					break
 				}
 				m.mu.Lock()
-				m.working++
+				concurrency := m.concurrency[job.Rank]
+				working := m.working[job.Rank]
+				m.mu.Unlock()
+				if working >= concurrency {
+					// All workers busy
+					break
+				}
+				m.mu.Lock()
+				rank := job.Rank
+				m.working[rank]++
 				job.State = Working
 				job.Started = time.Now().UnixNano()
 				err = m.st.Update(job)
@@ -308,7 +319,7 @@ func (m *Manager) schedule() {
 				}
 				m.mu.Unlock()
 				m.testJobScheduled()
-				m.jobc <- job
+				m.jobc[rank] <- job
 			}
 		case <-m.stopSched:
 			m.stopSched <- struct{}{}

@@ -59,7 +59,7 @@ func (st *InMemoryStore) Next() (*Job, error) {
 	var next *Job
 	for _, job := range st.jobs {
 		if job.State == Waiting {
-			if next == nil || job.Priority > next.Priority {
+			if next == nil || job.Rank > next.Rank || job.Priority > next.Priority {
 				next = job
 			}
 		}

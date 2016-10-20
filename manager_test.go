@@ -24,7 +24,10 @@ func TestManagerDefaults(t *testing.T) {
 	if m.st == nil {
 		t.Fatal("Store is nil")
 	}
-	if have, want := m.concurrency, defaultConcurrency; have != want {
+	if have, want := len(m.concurrency), 1; have != want {
+		t.Fatalf("len(concurrency) = %v, want %v", have, want)
+	}
+	if have, want := m.concurrency[0], defaultConcurrency; have != want {
 		t.Fatalf("concurrency = %v, want %v", have, want)
 	}
 	if have, want := m.started, false; have != want {

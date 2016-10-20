@@ -21,6 +21,7 @@ type Job struct {
 	Topic         string        `json:"topic"`     // topic to find the correct processor
 	State         string        `json:"state"`     // current state
 	Args          []interface{} `json:"args"`      // arguments to pass to processor
+	Rank          int           `json:"rank"`      // jobs with higher ranks get executed earlier
 	Priority      int64         `json:"prio"`      // priority (highest gets executed first)
 	Retry         int           `json:"retry"`     // current number of retries
 	MaxRetry      int           `json:"maxretry"`  // maximum number of retries

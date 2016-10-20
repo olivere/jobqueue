@@ -21,6 +21,7 @@ func main() {
 		exampleDBURL = "root@tcp(127.0.0.1:3306)/jobqueue_e2e?loc=UTC&parseTime=true"
 	)
 	var (
+		ranks           = flag.Int("r", 1, "number of ranks as in [0,r)")
 		concurrency     = flag.Int("c", 2, "maximum number of workers")
 		fillTime        = flag.Duration("fill-time", 5*time.Second, "interval in which new jobs get added")
 		runTime         = flag.Duration("run-time", 7*time.Second, "maximum run time of a single job")
@@ -33,6 +34,12 @@ func main() {
 		shutdownTimeout = flag.Duration("shutdown-timeout", -1*time.Second, "timeout to wait after shutdown (negative to wait forever)")
 	)
 	flag.Parse()
+
+	if *ranks <= 0 {
+		log.Fatal("r must be greater than 0")
+	}
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	rand.Seed(time.Now().UnixNano())
 
@@ -49,7 +56,9 @@ func main() {
 		}
 		options = append(options, jobqueue.SetStore(store))
 	}
-	options = append(options, jobqueue.SetConcurrency(*concurrency))
+	for rank := 0; rank < *ranks; rank++ {
+		options = append(options, jobqueue.SetConcurrency(rank, *concurrency))
+	}
 	m := jobqueue.New(options...)
 
 	// Add topics and processors
@@ -71,7 +80,7 @@ func main() {
 
 	// Enqueue tasks
 	go func() {
-		errc <- enqueuer(m, topics, *fillTime, *maxRetry)
+		errc <- enqueuer(m, topics, *ranks, *fillTime, *maxRetry)
 	}()
 
 	// Print stats
@@ -92,16 +101,17 @@ func main() {
 	}
 }
 
-func enqueuer(m *jobqueue.Manager, topics []string, fillTime time.Duration, maxRetry int) error {
+func enqueuer(m *jobqueue.Manager, topics []string, ranks int, fillTime time.Duration, maxRetry int) error {
 	var cnt int
 
 	fillTimeNanos := fillTime.Nanoseconds()
 	for {
 		time.Sleep(time.Duration(rand.Int63n(fillTimeNanos)) * time.Nanosecond)
 		topic := topics[rand.Intn(len(topics))]
+		rank := rand.Intn(ranks)
 		cnt++
 		cid := fmt.Sprintf("#%05d", cnt)
-		job := &jobqueue.Job{Topic: topic, MaxRetry: maxRetry, CorrelationID: cid}
+		job := &jobqueue.Job{Topic: topic, Rank: rank, MaxRetry: maxRetry, CorrelationID: cid}
 		err := m.Add(job)
 		if err != nil {
 			return err
