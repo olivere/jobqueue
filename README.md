@@ -1,7 +1,5 @@
 # Jobqueue
 
-**This is probably not ready for production yet.**
-
 Jobqueue manages running and scheduling jobs (think Sidekiq or Resque).
 
 [![Build Status](https://travis-ci.org/olivere/jobqueue.svg?branch=master)](https://travis-ci.org/olivere/jobqueue)
@@ -10,8 +8,11 @@ Jobqueue manages running and scheduling jobs (think Sidekiq or Resque).
 
 ## Prerequisites
 
-The only persistent backend for storing jobs, currently, is
-[MySQL](https://travis-ci.org/olivere/jobqueue/master/mysql).
+You can choose between
+[MySQL](https://travis-ci.org/olivere/jobqueue/master/mysql)
+and
+[MongoDB](https://travis-ci.org/olivere/jobqueue/master/mongodb)
+as a backend for persistent storage.
 
 ## Getting started
 

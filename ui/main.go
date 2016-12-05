@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/olivere/jobqueue"
+	"github.com/olivere/jobqueue/mongodb"
 	"github.com/olivere/jobqueue/mysql"
 	"github.com/olivere/jobqueue/ui/server"
 )
@@ -21,6 +22,7 @@ func main() {
 	)
 	var (
 		addr    = flag.String("addr", "127.0.0.1:12345", "HTTP bind address")
+		dbtype  = flag.String("dbtype", "mysql", "Storage type (memory, mysql or mongodb)")
 		dburl   = flag.String("dburl", "", "MySQL dsn for persistent storage, e.g. "+exampleDBURL)
 		dbdebug = flag.Bool("dbdebug", false, "Enabled debug output for DB store")
 	)
@@ -28,17 +30,30 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	// Initialize the manager
-	var options []jobqueue.ManagerOption
-	if *dburl != "" {
+	// Initialize the store
+	var err error
+	var store jobqueue.Store
+	switch *dbtype {
+	case "mysql":
 		var dboptions []mysql.StoreOption
 		if *dbdebug {
 			dboptions = append(dboptions, mysql.SetDebug(true))
 		}
-		store, err := mysql.NewStore(*dburl, dboptions...)
-		if err != nil {
-			log.Fatal(err)
-		}
+		store, err = mysql.NewStore(*dburl, dboptions...)
+	case "mongodb":
+		var dboptions []mongodb.StoreOption
+		store, err = mongodb.NewStore(*dburl, dboptions...)
+	case "memory":
+	default:
+		log.Fatal("unsupported dbtype; use either mysql or mongodb")
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Initialize the manager
+	var options []jobqueue.ManagerOption
+	if store != nil {
 		options = append(options, jobqueue.SetStore(store))
 	}
 	m := jobqueue.New(options...)
