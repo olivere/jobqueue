@@ -38,6 +38,9 @@ index ix_jobs_last_mod (last_mod));`
 
 	// add rank column and index on (rank, priority)
 	mysqlUpdate001 = `ALTER TABLE jobqueue_jobs ADD rank INT NOT NULL DEFAULT '0', ADD INDEX ix_jobs_rank_priority (rank, priority);`
+
+	// add correlation_group column and index on (correlation_group, correlation_id)
+	mysqlUpdate002 = `ALTER TABLE jobqueue_jobs ADD correlation_group varchar(255), ADD INDEX ix_jobs_correlation_group_and_id (correlation_group, correlation_id);`
 )
 
 // Store represents a persistent MySQL storage implementation.
@@ -85,11 +88,13 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	if st.debug {
 		st.db = st.db.Debug()
 	}
+
 	// Create schema
 	_, err = st.db.DB().Exec(mysqlSchema)
 	if err != nil {
 		return nil, err
 	}
+
 	// Apply update 001
 	var count int64
 	err = st.db.DB().QueryRow(`
@@ -105,6 +110,25 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	if count == 0 {
 		// Apply migration
 		_, err = st.db.DB().Exec(mysqlUpdate001)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply update 002
+	err = st.db.DB().QueryRow(`
+	SELECT COUNT(*) AS cnt
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = ?
+		AND TABLE_NAME = 'jobqueue_jobs'
+		AND COLUMN_NAME = 'correlation_group'
+	`, dbname).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		// Apply migration
+		_, err = st.db.DB().Exec(mysqlUpdate002)
 		if err != nil {
 			return nil, err
 		}
@@ -193,10 +217,24 @@ func (s *Store) Delete(job *jobqueue.Job) error {
 	return s.wrapError(s.db.Where("id = ?", job.ID).Delete(&Job{}).Error)
 }
 
-// Lookup retrieves a single job in the store.
+// Lookup retrieves a single job in the store by its identifier.
 func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
 	var j Job
 	err := s.db.Where("id = ?", id).First(&j).Error
+	if err != nil {
+		return nil, s.wrapError(err)
+	}
+	job, err := j.ToJob()
+	if err != nil {
+		return nil, s.wrapError(err)
+	}
+	return job, nil
+}
+
+// LookupByCorrelationID retrieves a single job in the store by its correlation identifier.
+func (s *Store) LookupByCorrelationID(correlationID string) (*jobqueue.Job, error) {
+	var j Job
+	err := s.db.Where("correlation_id = ?", correlationID).First(&j).Error
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
@@ -216,6 +254,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 	if request.State != "" {
 		qry = qry.Where("state = ?", request.State)
 	}
+	if request.CorrelationGroup != "" {
+		qry = qry.Where("correlation_group = ?", request.CorrelationGroup)
+	}
 	err := qry.Count(&rsp.Total).Error
 	if err != nil {
 		return nil, s.wrapError(err)
@@ -227,6 +268,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 		Limit(request.Limit)
 	if request.State != "" {
 		qry = qry.Where("state = ?", request.State)
+	}
+	if request.CorrelationGroup != "" {
+		qry = qry.Where("correlation_group = ?", request.CorrelationGroup)
 	}
 	var list []*Job
 	err = qry.Find(&list).Error
@@ -268,19 +312,20 @@ func (s *Store) Stats() (*jobqueue.Stats, error) {
 // -- MySQL-internal representation of a task --
 
 type Job struct {
-	ID            string `gorm:"primary_key"`
-	Topic         string
-	State         string
-	Args          sql.NullString
-	Rank          int
-	Priority      int64
-	Retry         int
-	MaxRetry      int
-	CorrelationID sql.NullString
-	Created       int64
-	Started       int64
-	Completed     int64
-	LastMod       int64
+	ID               string `gorm:"primary_key"`
+	Topic            string
+	State            string
+	Args             sql.NullString
+	Rank             int
+	Priority         int64
+	Retry            int
+	MaxRetry         int
+	CorrelationGroup sql.NullString
+	CorrelationID    sql.NullString
+	Created          int64
+	Started          int64
+	Completed        int64
+	LastMod          int64
 }
 
 func (Job) TableName() string {
@@ -297,18 +342,19 @@ func newJob(job *jobqueue.Job) (*Job, error) {
 		args = string(v)
 	}
 	return &Job{
-		ID:            job.ID,
-		Topic:         job.Topic,
-		State:         job.State,
-		Args:          sql.NullString{String: args, Valid: args != ""},
-		Rank:          job.Rank,
-		Priority:      job.Priority,
-		Retry:         job.Retry,
-		MaxRetry:      job.MaxRetry,
-		CorrelationID: sql.NullString{String: job.CorrelationID, Valid: job.CorrelationID != ""},
-		Created:       job.Created,
-		Started:       job.Started,
-		Completed:     job.Completed,
+		ID:               job.ID,
+		Topic:            job.Topic,
+		State:            job.State,
+		Args:             sql.NullString{String: args, Valid: args != ""},
+		Rank:             job.Rank,
+		Priority:         job.Priority,
+		Retry:            job.Retry,
+		MaxRetry:         job.MaxRetry,
+		CorrelationGroup: sql.NullString{String: job.CorrelationGroup, Valid: job.CorrelationGroup != ""},
+		CorrelationID:    sql.NullString{String: job.CorrelationID, Valid: job.CorrelationID != ""},
+		Created:          job.Created,
+		Started:          job.Started,
+		Completed:        job.Completed,
 	}, nil
 }
 
@@ -320,18 +366,19 @@ func (j *Job) ToJob() (*jobqueue.Job, error) {
 		}
 	}
 	job := &jobqueue.Job{
-		ID:            j.ID,
-		Topic:         j.Topic,
-		State:         j.State,
-		Args:          args,
-		Rank:          j.Rank,
-		Priority:      j.Priority,
-		Retry:         j.Retry,
-		MaxRetry:      j.MaxRetry,
-		CorrelationID: j.CorrelationID.String,
-		Created:       j.Created,
-		Started:       j.Started,
-		Completed:     j.Completed,
+		ID:               j.ID,
+		Topic:            j.Topic,
+		State:            j.State,
+		Args:             args,
+		Rank:             j.Rank,
+		Priority:         j.Priority,
+		Retry:            j.Retry,
+		MaxRetry:         j.MaxRetry,
+		CorrelationGroup: j.CorrelationGroup.String,
+		CorrelationID:    j.CorrelationID.String,
+		Created:          j.Created,
+		Started:          j.Started,
+		Completed:        j.Completed,
 	}
 	return job, nil
 }

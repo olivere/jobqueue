@@ -100,6 +100,18 @@ func (st *InMemoryStore) Lookup(id string) (*Job, error) {
 	return job, nil
 }
 
+// LookupByCorrelationID returns the job with the specified correlation identifier (or ErrNotFound).
+func (st *InMemoryStore) LookupByCorrelationID(correlationID string) (*Job, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for _, job := range st.jobs {
+		if job.CorrelationID == correlationID {
+			return job, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 // List finds matching jobs.
 func (st *InMemoryStore) List(req *ListRequest) (*ListResponse, error) {
 	st.mu.Lock()

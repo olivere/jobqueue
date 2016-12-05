@@ -83,6 +83,14 @@ func NewStore(mongodbURL string, options ...StoreOption) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	err = st.coll.EnsureIndexKey("correlation_id")
+	if err != nil {
+		return nil, err
+	}
+	err = st.coll.EnsureIndexKey("correlation_group", "correlation_id")
+	if err != nil {
+		return nil, err
+	}
 
 	return st, nil
 }
@@ -156,10 +164,24 @@ func (s *Store) Delete(job *jobqueue.Job) error {
 	return s.wrapError(s.coll.RemoveId(job.ID))
 }
 
-// Lookup retrieves a single job in the store.
+// Lookup retrieves a single job in the store by its identifier.
 func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
 	var j Job
 	err := s.coll.FindId(id).One(&j)
+	if err != nil {
+		return nil, s.wrapError(err)
+	}
+	job, err := j.ToJob()
+	if err != nil {
+		return nil, s.wrapError(err)
+	}
+	return job, nil
+}
+
+// LookupByCorrelationID retrieves a single job in the store by its correlation identifier.
+func (s *Store) LookupByCorrelationID(correlationID string) (*jobqueue.Job, error) {
+	var j Job
+	err := s.coll.Find(bson.M{"correlation_id": correlationID}).One(&j)
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
@@ -174,24 +196,25 @@ func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
 func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, error) {
 	rsp := &jobqueue.ListResponse{}
 
-	// Count
-	cquery := bson.M{}
+	// Common filters for both Count and Find
+	query := bson.M{}
 	if request.State != "" {
-		cquery["state"] = request.State
+		query["state"] = request.State
 	}
-	count, err := s.coll.Find(cquery).Count()
+	if request.CorrelationGroup != "" {
+		query["correlation_group"] = request.CorrelationGroup
+	}
+
+	// Count
+	count, err := s.coll.Find(query).Count()
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
 	rsp.Total = count
 
 	// Find
-	fquery := bson.M{}
-	if request.State != "" {
-		fquery["state"] = request.State
-	}
 	var list []*Job
-	err = s.coll.Find(fquery).Sort("-last_mod").Skip(request.Offset).Limit(request.Limit).All(&list)
+	err = s.coll.Find(query).Sort("-last_mod").Skip(request.Offset).Limit(request.Limit).All(&list)
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
@@ -234,19 +257,20 @@ func (s *Store) Stats() (*jobqueue.Stats, error) {
 // -- MongoDB-internal representation of a task --
 
 type Job struct {
-	ID            string `bson:"_id"`
-	Topic         string
-	State         string
-	Args          *string
-	Rank          int
-	Priority      int64
-	Retry         int
-	MaxRetry      int    `bson:"max_retry"`
-	CorrelationID string `bson:"correlation_id"`
-	Created       int64
-	Started       int64
-	Completed     int64
-	LastMod       int64 `bson:"last_mod"`
+	ID               string `bson:"_id"`
+	Topic            string
+	State            string
+	Args             *string
+	Rank             int
+	Priority         int64
+	Retry            int
+	MaxRetry         int    `bson:"max_retry"`
+	CorrelationGroup string `bson:"correlation_group"`
+	CorrelationID    string `bson:"correlation_id"`
+	Created          int64
+	Started          int64
+	Completed        int64
+	LastMod          int64 `bson:"last_mod"`
 }
 
 func newJob(job *jobqueue.Job) (*Job, error) {
@@ -260,18 +284,19 @@ func newJob(job *jobqueue.Job) (*Job, error) {
 		args = &s
 	}
 	return &Job{
-		ID:            job.ID,
-		Topic:         job.Topic,
-		State:         job.State,
-		Args:          args,
-		Rank:          job.Rank,
-		Priority:      job.Priority,
-		Retry:         job.Retry,
-		MaxRetry:      job.MaxRetry,
-		CorrelationID: job.CorrelationID,
-		Created:       job.Created,
-		Started:       job.Started,
-		Completed:     job.Completed,
+		ID:               job.ID,
+		Topic:            job.Topic,
+		State:            job.State,
+		Args:             args,
+		Rank:             job.Rank,
+		Priority:         job.Priority,
+		Retry:            job.Retry,
+		MaxRetry:         job.MaxRetry,
+		CorrelationGroup: job.CorrelationGroup,
+		CorrelationID:    job.CorrelationID,
+		Created:          job.Created,
+		Started:          job.Started,
+		Completed:        job.Completed,
 	}, nil
 }
 
@@ -283,18 +308,19 @@ func (j *Job) ToJob() (*jobqueue.Job, error) {
 		}
 	}
 	job := &jobqueue.Job{
-		ID:            j.ID,
-		Topic:         j.Topic,
-		State:         j.State,
-		Args:          args,
-		Rank:          j.Rank,
-		Priority:      j.Priority,
-		Retry:         j.Retry,
-		MaxRetry:      j.MaxRetry,
-		CorrelationID: j.CorrelationID,
-		Created:       j.Created,
-		Started:       j.Started,
-		Completed:     j.Completed,
+		ID:               j.ID,
+		Topic:            j.Topic,
+		State:            j.State,
+		Args:             args,
+		Rank:             j.Rank,
+		Priority:         j.Priority,
+		Retry:            j.Retry,
+		MaxRetry:         j.MaxRetry,
+		CorrelationGroup: j.CorrelationGroup,
+		CorrelationID:    j.CorrelationID,
+		Created:          j.Created,
+		Started:          j.Started,
+		Completed:        j.Completed,
 	}
 	return job, nil
 }
