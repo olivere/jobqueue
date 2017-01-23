@@ -47,9 +47,9 @@ type Store interface {
 	// If the job could not be found, ErrNotFound must be returned.
 	Lookup(string) (*Job, error)
 
-	// LookupByCorrelationID returns the details of a job by its correlation identifier.
-	// If the job could not be found, ErrNotFound must be returned.
-	LookupByCorrelationID(string) (*Job, error)
+	// LookupByCorrelationID returns the details of jobs by their correlation identifier.
+	// If no such job could be found, an empty array is returned.
+	LookupByCorrelationID(string) ([]*Job, error)
 
 	// List returns a list of jobs filtered by the ListRequest.
 	List(*ListRequest) (*ListResponse, error)
@@ -58,6 +58,7 @@ type Store interface {
 // ListRequest specifies a filter for listing jobs.
 type ListRequest struct {
 	CorrelationGroup string // filter by correlation group
+	CorrelationID    string // filter by correlation identifier
 	State            string // filter by job state
 	Limit            int    // maximum number of jobs to return
 	Offset           int    // number of jobs to skip (for pagination)

@@ -268,9 +268,9 @@ func (m *Manager) Lookup(id string) (*Job, error) {
 	return m.st.Lookup(id)
 }
 
-// LookupByCorrelationID returns the job with the specified correlation/external identifer.
-// If no such job exists, ErrNotFound is returned.
-func (m *Manager) LookupByCorrelationID(correlationID string) (*Job, error) {
+// LookupByCorrelationID returns the details of jobs by their correlation identifier.
+// If no such job could be found, an empty array is returned.
+func (m *Manager) LookupByCorrelationID(correlationID string) ([]*Job, error) {
 	return m.st.LookupByCorrelationID(correlationID)
 }
 

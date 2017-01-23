@@ -178,18 +178,23 @@ func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
 	return job, nil
 }
 
-// LookupByCorrelationID retrieves a single job in the store by its correlation identifier.
-func (s *Store) LookupByCorrelationID(correlationID string) (*jobqueue.Job, error) {
-	var j Job
-	err := s.coll.Find(bson.M{"correlation_id": correlationID}).One(&j)
+// LookupByCorrelationID returns the details of jobs by their correlation identifier.
+// If no such job could be found, an empty array is returned.
+func (s *Store) LookupByCorrelationID(correlationID string) ([]*jobqueue.Job, error) {
+	var jobs []Job
+	err := s.coll.Find(bson.M{"correlation_id": correlationID}).All(&jobs)
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	job, err := j.ToJob()
-	if err != nil {
-		return nil, s.wrapError(err)
+	result := make([]*jobqueue.Job, len(jobs))
+	for i, j := range jobs {
+		job, err := j.ToJob()
+		if err != nil {
+			return nil, s.wrapError(err)
+		}
+		result[i] = job
 	}
-	return job, nil
+	return result, nil
 }
 
 // List returns a list of all jobs stored in the data store.
@@ -203,6 +208,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 	}
 	if request.CorrelationGroup != "" {
 		query["correlation_group"] = request.CorrelationGroup
+	}
+	if request.CorrelationID != "" {
+		query["correlation_id"] = request.CorrelationID
 	}
 
 	// Count
