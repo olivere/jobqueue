@@ -203,6 +203,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 
 	// Common filters for both Count and Find
 	query := bson.M{}
+	if request.Topic != "" {
+		query["topic"] = request.Topic
+	}
 	if request.State != "" {
 		query["state"] = request.State
 	}
@@ -237,20 +240,31 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 }
 
 // Stats returns statistics about the jobs in the store.
-func (s *Store) Stats() (*jobqueue.Stats, error) {
-	waiting, err := s.coll.Find(bson.M{"state": jobqueue.Waiting}).Count()
+func (s *Store) Stats(req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
+	buildFilter := func(state string) bson.M {
+		f := bson.M{"state": state}
+		if req.Topic != "" {
+			f["topic"] = req.Topic
+		}
+		if req.CorrelationGroup != "" {
+			f["correlation_group"] = req.CorrelationGroup
+		}
+		return f
+	}
+	waiting, err := s.coll.Find(buildFilter(jobqueue.Waiting)).Count()
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	working, err := s.coll.Find(bson.M{"state": jobqueue.Working}).Count()
+
+	working, err := s.coll.Find(buildFilter(jobqueue.Working)).Count()
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	succeeded, err := s.coll.Find(bson.M{"state": jobqueue.Succeeded}).Count()
+	succeeded, err := s.coll.Find(buildFilter(jobqueue.Succeeded)).Count()
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	failed, err := s.coll.Find(bson.M{"state": jobqueue.Failed}).Count()
+	failed, err := s.coll.Find(buildFilter(jobqueue.Failed)).Count()
 	if err != nil {
 		return nil, s.wrapError(err)
 	}

@@ -68,11 +68,17 @@ func (st *InMemoryStore) Next() (*Job, error) {
 }
 
 // Stats returns statistics about the jobs in the store.
-func (st *InMemoryStore) Stats() (*Stats, error) {
+func (st *InMemoryStore) Stats(req *StatsRequest) (*Stats, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	stats := &Stats{}
 	for _, job := range st.jobs {
+		if req.Topic != "" && job.Topic != req.Topic {
+			continue
+		}
+		if req.CorrelationGroup != "" && job.CorrelationGroup != req.CorrelationGroup {
+			continue
+		}
 		switch job.State {
 		default:
 			return nil, fmt.Errorf("found unknown state %v", job.State)
@@ -122,15 +128,19 @@ func (st *InMemoryStore) List(req *ListRequest) (*ListResponse, error) {
 	i := -1
 	for _, job := range st.jobs {
 		var skip bool
-		if req.Offset > 0 && req.Offset < i {
+		if req.Topic != "" && req.Topic != job.Topic {
 			skip = true
 		}
 		if req.State != "" && job.State != req.State {
+			skip = true
+		}
+		if req.Offset > 0 && req.Offset < i {
 			skip = true
 			rsp.Total++
 		}
 		if req.Limit > 0 && i > req.Limit {
 			skip = true
+			rsp.Total++
 		}
 		if !skip {
 			rsp.Jobs = append(rsp.Jobs, job)

@@ -258,8 +258,8 @@ func (m *Manager) Add(job *Job) error {
 // -- Stats, Lookup and List --
 
 // Stats returns current statistics about the job queue.
-func (m *Manager) Stats() (*Stats, error) {
-	return m.st.Stats()
+func (m *Manager) Stats(request *StatsRequest) (*Stats, error) {
+	return m.st.Stats(request)
 }
 
 // Lookup returns the job with the specified identifer.

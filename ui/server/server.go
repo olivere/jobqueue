@@ -55,7 +55,7 @@ func watcher(m *jobqueue.Manager) {
 		select {
 		case <-t.C:
 			newState := &State{Type: "SET_STATE"}
-			stats, err := m.Stats()
+			stats, err := m.Stats(&jobqueue.StatsRequest{})
 			if err != nil {
 				panic(err)
 			}

@@ -41,7 +41,7 @@ type Store interface {
 	// Stats returns statistics about the store, e.g. the number of jobs
 	// waiting, working, succeeded, and failed. This is run when the manager
 	// starts up to get initial stats.
-	Stats() (*Stats, error)
+	Stats(*StatsRequest) (*Stats, error)
 
 	// Lookup returns the details of a job by its identifier.
 	// If the job could not be found, ErrNotFound must be returned.
@@ -55,8 +55,15 @@ type Store interface {
 	List(*ListRequest) (*ListResponse, error)
 }
 
+// StatsRequest returns information about the number of managed jobs.
+type StatsRequest struct {
+	Topic            string // filter by topic
+	CorrelationGroup string // filter by correlation group
+}
+
 // ListRequest specifies a filter for listing jobs.
 type ListRequest struct {
+	Topic            string // filter by topic
 	CorrelationGroup string // filter by correlation group
 	CorrelationID    string // filter by correlation identifier
 	State            string // filter by job state

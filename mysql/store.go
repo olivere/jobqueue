@@ -256,6 +256,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 
 	// Count
 	qry := s.db.Model(&Job{})
+	if request.Topic != "" {
+		qry = qry.Where("topic = ?", request.Topic)
+	}
 	if request.State != "" {
 		qry = qry.Where("state = ?", request.State)
 	}
@@ -274,6 +277,9 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 	qry = s.db.Order("last_mod desc").
 		Offset(request.Offset).
 		Limit(request.Limit)
+	if request.Topic != "" {
+		qry = qry.Where("topic = ?", request.Topic)
+	}
 	if request.State != "" {
 		qry = qry.Where("state = ?", request.State)
 	}
@@ -299,21 +305,31 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 }
 
 // Stats returns statistics about the jobs in the store.
-func (s *Store) Stats() (*jobqueue.Stats, error) {
+func (s *Store) Stats(req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
 	stats := new(jobqueue.Stats)
-	err := s.db.Model(&Job{}).Where("state = ?", jobqueue.Waiting).Count(&stats.Waiting).Error
+	buildFilter := func(state string) *gorm.DB {
+		f := s.db.Model(&Job{}).Where("state = ?", state)
+		if req.Topic != "" {
+			f = f.Where("topic = ?", req.Topic)
+		}
+		if req.CorrelationGroup != "" {
+			f = f.Where("correlation_group = ?", req.CorrelationGroup)
+		}
+		return f
+	}
+	err := buildFilter(jobqueue.Waiting).Count(&stats.Waiting).Error
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	err = s.db.Model(&Job{}).Where("state = ?", jobqueue.Working).Count(&stats.Working).Error
+	err = buildFilter(jobqueue.Working).Count(&stats.Working).Error
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	err = s.db.Model(&Job{}).Where("state = ?", jobqueue.Succeeded).Count(&stats.Succeeded).Error
+	err = buildFilter(jobqueue.Succeeded).Count(&stats.Succeeded).Error
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	err = s.db.Model(&Job{}).Where("state = ?", jobqueue.Failed).Count(&stats.Failed).Error
+	err = buildFilter(jobqueue.Failed).Count(&stats.Failed).Error
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
