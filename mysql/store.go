@@ -117,12 +117,12 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 
 	// Apply update 002
 	err = st.db.DB().QueryRow(`
-	SELECT COUNT(*) AS cnt
-		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = ?
-		AND TABLE_NAME = 'jobqueue_jobs'
-		AND COLUMN_NAME = 'correlation_group'
-	`, dbname).Scan(&count)
+		SELECT COUNT(*) AS cnt
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = ?
+			AND TABLE_NAME = 'jobqueue_jobs'
+			AND COLUMN_NAME = 'correlation_group'
+		`, dbname).Scan(&count)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +133,7 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 			return nil, err
 		}
 	}
+
 	return st, nil
 }
 
@@ -192,8 +193,26 @@ func (s *Store) Update(job *jobqueue.Job) error {
 	if err != nil {
 		return err
 	}
+
+	tx := s.db.Begin()
+	var ids []string
+	err = tx.Raw("SELECT id FROM jobqueue_jobs WHERE id = ? AND last_mod = ? FOR UPDATE", job.ID, job.Updated).
+		Scan(&ids).
+		Error
+	if err != nil {
+		tx.Rollback()
+		return s.wrapError(err)
+	}
 	j.LastMod = time.Now().UnixNano()
-	return s.wrapError(s.db.Save(j).Error)
+	if err := tx.Save(&j).Error; err != nil {
+		tx.Rollback()
+		return s.wrapError(err)
+	}
+	if err := tx.Commit().Error; err != nil {
+		return s.wrapError(err)
+	}
+	job.Updated = j.LastMod
+	return nil
 }
 
 // Next picks the next job to execute, or nil if no executable job is available.
@@ -380,6 +399,7 @@ func newJob(job *jobqueue.Job) (*Job, error) {
 		CorrelationGroup: sql.NullString{String: job.CorrelationGroup, Valid: job.CorrelationGroup != ""},
 		CorrelationID:    sql.NullString{String: job.CorrelationID, Valid: job.CorrelationID != ""},
 		Created:          job.Created,
+		LastMod:          job.Updated,
 		Started:          job.Started,
 		Completed:        job.Completed,
 	}, nil
@@ -405,6 +425,7 @@ func (j *Job) ToJob() (*jobqueue.Job, error) {
 		CorrelationID:    j.CorrelationID.String,
 		Created:          j.Created,
 		Started:          j.Started,
+		Updated:          j.LastMod,
 		Completed:        j.Completed,
 	}
 	return job, nil

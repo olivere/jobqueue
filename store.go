@@ -7,7 +7,7 @@ package jobqueue
 import "errors"
 
 var (
-	// ErrNotFound must be returned from Store interface when a certain job
+	// ErrNotFound must be returned from Store implementation when a certain job
 	// could not be found in the specific data store.
 	ErrNotFound = errors.New("jobqueue: job not found")
 )
@@ -26,7 +26,7 @@ type Store interface {
 	Delete(*Job) error
 
 	// Update updates a job in the store. This is called frequently as jobs
-	// are processed.
+	// are processed. Update must allow for concurrent updates, e.g. by locking.
 	Update(*Job) error
 
 	// Next picks the next job to execute.

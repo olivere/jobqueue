@@ -313,8 +313,6 @@ func (m *Manager) schedule() {
 					break
 				}
 				m.mu.Lock()
-				rank := job.Rank
-				m.working[rank]++
 				job.State = Working
 				job.Started = time.Now().UnixNano()
 				err = m.st.Update(job)
@@ -323,6 +321,8 @@ func (m *Manager) schedule() {
 					m.logger.Printf("jobqueue: error updating job: %v", err)
 					break
 				}
+				rank := job.Rank
+				m.working[rank]++
 				m.mu.Unlock()
 				m.testJobScheduled()
 				m.jobc[rank] <- job

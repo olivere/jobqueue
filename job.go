@@ -28,6 +28,7 @@ type Job struct {
 	CorrelationGroup string        `json:"cgroup"`    // external group
 	CorrelationID    string        `json:"cid"`       // external identifier
 	Created          int64         `json:"created"`   // time when Add was called (in UnixNano)
+	Updated          int64         `json:"updated"`   // time when the job was last updated (in UnixNano)
 	Started          int64         `json:"started"`   // time when the job was started (in UnixNano)
 	Completed        int64         `json:"completed"` // time when job reached either state Succeeded or Failed (in UnixNano)
 }
