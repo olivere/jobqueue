@@ -242,7 +242,7 @@ func (m *Manager) Add(job *Job) error {
 	if !found {
 		return fmt.Errorf("jobqueue: topic %s not registered", job.Topic)
 	}
-	job.ID = uuid.NewV4().String()
+	job.ID = uuid.Must(uuid.NewV4()).String()
 	job.State = Waiting
 	job.Retry = 0
 	job.Priority = -time.Now().UnixNano()
