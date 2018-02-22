@@ -24,3 +24,4 @@ _testmain.go
 cover.coverprofile
 /e2e/e2e
 /ui/ui
+/vendor
