@@ -22,6 +22,10 @@ func ExampleManager() {
 		jobDone <- struct{}{}
 		return nil
 	})
+	if err != nil {
+		fmt.Println("Register failed")
+		return
+	}
 
 	// Start the manager
 	err = m.Start()

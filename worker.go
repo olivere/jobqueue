@@ -23,17 +23,10 @@ func newWorker(m *Manager, jobc <-chan *Job) *worker {
 // calls process.
 func (w *worker) run() {
 	defer w.m.workersWg.Done()
-	for {
-		select {
-		case job, more := <-w.jobc:
-			if !more {
-				// jobc has been closed
-				return
-			}
-			err := w.process(job)
-			if err != nil {
-				w.m.logger.Printf("jobqueue: job %v failed: %v", job.ID, err)
-			}
+	for job := range w.jobc {
+		err := w.process(job)
+		if err != nil {
+			w.m.logger.Printf("jobqueue: job %v failed: %v", job.ID, err)
 		}
 	}
 }
@@ -66,11 +59,7 @@ func (w *worker) process(job *Job) error {
 			w.m.testJobFailed() // testing hook
 			job.State = Failed
 			job.Completed = time.Now().UnixNano()
-			err = w.m.st.Update(job)
-			if err != nil {
-				return err
-			}
-			return nil
+			return w.m.st.Update(job)
 		}
 
 		// Retry
@@ -78,11 +67,7 @@ func (w *worker) process(job *Job) error {
 		job.Priority = -time.Now().Add(w.m.backoff(job.Retry)).UnixNano()
 		job.State = Waiting
 		job.Retry++
-		err = w.m.st.Update(job)
-		if err != nil {
-			return err
-		}
-		return nil
+		return w.m.st.Update(job)
 	}
 
 	// Successfully executed the job
