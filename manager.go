@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/satori/go.uuid"
+	"github.com/google/uuid"
 )
 
 const (
@@ -242,7 +242,7 @@ func (m *Manager) Add(job *Job) error {
 	if !found {
 		return fmt.Errorf("jobqueue: topic %s not registered", job.Topic)
 	}
-	job.ID = uuid.NewV4().String()
+	job.ID = uuid.New().String()
 	job.State = Waiting
 	job.Retry = 0
 	job.Priority = -time.Now().UnixNano()
