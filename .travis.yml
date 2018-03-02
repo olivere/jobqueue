@@ -6,7 +6,7 @@ services:
   - mysql
   - mongodb
 install:
-  - go get github.com/satori/go.uuid
+  - go get github.com/google/uuid
   - go get github.com/go-sql-driver/mysql
   - go get github.com/jinzhu/gorm
   - go get gopkg.in/mgo.v2
