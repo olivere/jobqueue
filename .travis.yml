@@ -1,14 +1,20 @@
 sudo: false
 language: go
+env:
+- GO111MODULE=on
 go:
-  - "1.9.x"
   - "1.10.x"
+  - "1.11.x"
 services:
-  - mysql
-  - mongodb
+- mysql
+- mongodb
 install:
-  - go get github.com/google/uuid
-  - go get github.com/go-sql-driver/mysql
-  - go get github.com/jinzhu/gorm
-  - go get gopkg.in/mgo.v2
-  - go get github.com/gorilla/websocket
+- go get ./...
+script:
+- go test -race -v ./...
+
+#- go get github.com/google/uuid
+#- go get github.com/go-sql-driver/mysql
+#- go get github.com/jinzhu/gorm
+#- go get gopkg.in/mgo.v2
+#- go get github.com/gorilla/websocket
