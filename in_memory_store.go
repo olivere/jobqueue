@@ -13,13 +13,13 @@ import (
 // It implements the Store interface. Do not use in production.
 type InMemoryStore struct {
 	mu   sync.Mutex
-	jobs map[string]*Job
+	jobs map[string]Job
 }
 
 // NewInMemoryStore creates a new InMemoryStore.
 func NewInMemoryStore() *InMemoryStore {
 	return &InMemoryStore{
-		jobs: make(map[string]*Job),
+		jobs: make(map[string]Job),
 	}
 }
 
@@ -32,7 +32,7 @@ func (st *InMemoryStore) Start() error {
 func (st *InMemoryStore) Create(job *Job) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.jobs[job.ID] = job
+	st.jobs[job.ID] = *job
 	return nil
 }
 
@@ -48,7 +48,7 @@ func (st *InMemoryStore) Delete(job *Job) error {
 func (st *InMemoryStore) Update(job *Job) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.jobs[job.ID] = job
+	st.jobs[job.ID] = *job
 	return nil
 }
 
@@ -60,7 +60,8 @@ func (st *InMemoryStore) Next() (*Job, error) {
 	for _, job := range st.jobs {
 		if job.State == Waiting {
 			if next == nil || job.Rank > next.Rank || job.Priority > next.Priority {
-				next = job
+				dup := job
+				next = &dup
 			}
 		}
 	}
@@ -103,7 +104,8 @@ func (st *InMemoryStore) Lookup(id string) (*Job, error) {
 	if !found {
 		return nil, ErrNotFound
 	}
-	return job, nil
+	dup := job
+	return &dup, nil
 }
 
 // LookupByCorrelationID returns the details of jobs by their correlation identifier.
@@ -114,7 +116,8 @@ func (st *InMemoryStore) LookupByCorrelationID(correlationID string) ([]*Job, er
 	var result []*Job
 	for _, job := range st.jobs {
 		if job.CorrelationID == correlationID {
-			result = append(result, job)
+			dup := job
+			result = append(result, &dup)
 		}
 	}
 	return result, nil
@@ -143,7 +146,8 @@ func (st *InMemoryStore) List(req *ListRequest) (*ListResponse, error) {
 			rsp.Total++
 		}
 		if !skip {
-			rsp.Jobs = append(rsp.Jobs, job)
+			dup := job
+			rsp.Jobs = append(rsp.Jobs, &dup)
 		}
 		i++
 	}
