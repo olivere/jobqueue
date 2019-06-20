@@ -1,6 +1,7 @@
 module github.com/olivere/jobqueue
 
 require (
+	github.com/cenkalti/backoff v2.1.1+incompatible
 	github.com/globalsign/mgo v0.0.0-20180821103416-46bcd340f9a5
 	github.com/go-sql-driver/mysql v1.4.0
 	github.com/google/uuid v0.0.0-20171129191014-dec09d789f3d

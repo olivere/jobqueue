@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/jinzhu/gorm"
 
@@ -162,6 +163,13 @@ func (s *Store) wrapError(err error) error {
 	return err
 }
 
+func (s *Store) runWithRetry(fn func() error) error {
+	b := backoff.NewExponentialBackOff()
+	b.MaxInterval = 5 * time.Second
+	b.MaxElapsedTime = 15 * time.Second
+	return backoff.Retry(fn, b)
+}
+
 // Start is called when the manager starts up.
 // We ensure that stale jobs are marked as failed so that we have place
 // for new jobs.
@@ -184,7 +192,10 @@ func (s *Store) Create(job *jobqueue.Job) error {
 		return err
 	}
 	j.LastMod = j.Created
-	return s.wrapError(s.db.Create(j).Error)
+	err = s.runWithRetry(func() error {
+		return s.db.Create(j).Error
+	})
+	return s.wrapError(err)
 }
 
 // Update updates the job in the store.
@@ -193,26 +204,27 @@ func (s *Store) Update(job *jobqueue.Job) error {
 	if err != nil {
 		return err
 	}
-
-	tx := s.db.Begin()
-	var ids []string
-	err = tx.Raw("SELECT id FROM jobqueue_jobs WHERE id = ? AND last_mod = ? FOR UPDATE", job.ID, job.Updated).
-		Scan(&ids).
-		Error
-	if err != nil {
-		tx.Rollback()
-		return s.wrapError(err)
-	}
-	j.LastMod = time.Now().UnixNano()
-	if err := tx.Save(&j).Error; err != nil {
-		tx.Rollback()
-		return s.wrapError(err)
-	}
-	if err := tx.Commit().Error; err != nil {
-		return s.wrapError(err)
-	}
-	job.Updated = j.LastMod
-	return nil
+	return s.runWithRetry(func() error {
+		tx := s.db.Begin()
+		var ids []string
+		err = tx.Raw("SELECT id FROM jobqueue_jobs WHERE id = ? AND last_mod = ? FOR UPDATE", job.ID, job.Updated).
+			Scan(&ids).
+			Error
+		if err != nil {
+			tx.Rollback()
+			return s.wrapError(err)
+		}
+		j.LastMod = time.Now().UnixNano()
+		if err := tx.Save(&j).Error; err != nil {
+			tx.Rollback()
+			return s.wrapError(err)
+		}
+		if err := tx.Commit().Error; err != nil {
+			return s.wrapError(err)
+		}
+		job.Updated = j.LastMod
+		return nil
+	})
 }
 
 // Next picks the next job to execute, or nil if no executable job is available.
@@ -233,7 +245,10 @@ func (s *Store) Next() (*jobqueue.Job, error) {
 
 // Delete removes a job from the store.
 func (s *Store) Delete(job *jobqueue.Job) error {
-	return s.wrapError(s.db.Where("id = ?", job.ID).Delete(&Job{}).Error)
+	return s.runWithRetry(func() error {
+		err := s.db.Where("id = ?", job.ID).Delete(&Job{}).Error
+		return s.wrapError(err)
+	})
 }
 
 // Lookup retrieves a single job in the store by its identifier.
