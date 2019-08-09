@@ -5,6 +5,8 @@
 
 package server
 
+import "context"
+
 // hub maintains the set of active connections and broadcasts messages to the
 // connections.
 type hub struct {
@@ -28,7 +30,7 @@ var h = hub{
 	connections: make(map[*connection]bool),
 }
 
-func (h *hub) run() {
+func (h *hub) run(ctx context.Context) {
 	for {
 		select {
 		case c := <-h.register:
@@ -47,6 +49,8 @@ func (h *hub) run() {
 					delete(h.connections, c)
 				}
 			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

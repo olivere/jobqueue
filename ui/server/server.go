@@ -5,6 +5,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -30,8 +31,10 @@ func (srv *Server) Serve(addr string) error {
 	r.Handle("/", http.FileServer(http.Dir("public")))
 	StateUpdates = make(chan *State)
 	defer close(StateUpdates)
-	go watcher(srv.m)
-	go h.run() // run websocket hub
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watcher(ctx, srv.m)
+	go h.run(ctx) // run websocket hub
 	return http.ListenAndServe(addr, r)
 }
 
@@ -47,7 +50,7 @@ type State struct {
 
 var StateUpdates chan *State
 
-func watcher(m *jobqueue.Manager) {
+func watcher(ctx context.Context, m *jobqueue.Manager) {
 	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()
 
@@ -55,32 +58,34 @@ func watcher(m *jobqueue.Manager) {
 		select {
 		case <-t.C:
 			newState := &State{Type: "SET_STATE"}
-			stats, err := m.Stats(&jobqueue.StatsRequest{})
+			stats, err := m.Stats(ctx, &jobqueue.StatsRequest{})
 			if err != nil {
 				panic(err)
 			}
 			newState.Stats = stats
-			rsp, err := m.List(&jobqueue.ListRequest{State: jobqueue.Waiting})
+			rsp, err := m.List(ctx, &jobqueue.ListRequest{State: jobqueue.Waiting})
 			if err != nil {
 				panic(err)
 			}
 			newState.Waiting = rsp.Jobs
-			rsp, err = m.List(&jobqueue.ListRequest{State: jobqueue.Working})
+			rsp, err = m.List(ctx, &jobqueue.ListRequest{State: jobqueue.Working})
 			if err != nil {
 				panic(err)
 			}
 			newState.Working = rsp.Jobs
-			rsp, err = m.List(&jobqueue.ListRequest{State: jobqueue.Succeeded, Limit: 10})
+			rsp, err = m.List(ctx, &jobqueue.ListRequest{State: jobqueue.Succeeded, Limit: 10})
 			if err != nil {
 				panic(err)
 			}
 			newState.Succeeded = rsp.Jobs
-			rsp, err = m.List(&jobqueue.ListRequest{State: jobqueue.Failed, Limit: 10})
+			rsp, err = m.List(ctx, &jobqueue.ListRequest{State: jobqueue.Failed, Limit: 10})
 			if err != nil {
 				panic(err)
 			}
 			newState.Failed = rsp.Jobs
 			StateUpdates <- newState
+		case <-ctx.Done():
+			return
 		}
 	}
 }

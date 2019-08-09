@@ -1,32 +1,24 @@
 package mysql
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
-	mysqldriver "github.com/go-sql-driver/mysql"
-	"github.com/jinzhu/gorm"
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/olivere/jobqueue"
 )
 
 const (
-	testDBURL = "root@tcp(127.0.0.1:3306)/jobqueue_e2e?loc=UTC&parseTime=true"
+	testDBURL = "root@tcp(127.0.0.1:3306)/jobqueue_test?loc=UTC&parseTime=true"
 )
-
-func isTravis() bool {
-	return os.Getenv("TRAVIS") != ""
-}
-
-func travisGoVersion() string {
-	return os.Getenv("TRAVIS_GO_VERSION")
-}
 
 // dropDatabase drops the database specified in the dburl connection string.
 func dropDatabase(t *testing.T, dburl string) {
-	cfg, err := mysqldriver.ParseDSN(dburl)
+	cfg, err := mysql.ParseDSN(dburl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,25 +28,20 @@ func dropDatabase(t *testing.T, dburl string) {
 	}
 	// Connect without DB name
 	cfg.DBName = ""
-	db, err := gorm.Open("mysql", cfg.FormatDSN())
+	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
 
 	// Create database
-	_, err = db.DB().Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbname))
+	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbname))
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestNewStore(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
 	defer dropDatabase(t, testDBURL)
 
 	_, err := NewStore(testDBURL, SetDebug(true))
@@ -66,11 +53,6 @@ func TestNewStore(t *testing.T) {
 // TestJobSuccess is the green case where a job is called and it is
 // processed without problems.
 func TestJobSuccess(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
 	jobDone := make(chan struct{}, 1)
 
 	st, err := NewStore(testDBURL, SetDebug(true))
@@ -104,7 +86,7 @@ func TestJobSuccess(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &jobqueue.Job{Topic: "topic", Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,10 @@ import (
 	"github.com/olivere/jobqueue"
 	"github.com/olivere/jobqueue/mongodb"
 	"github.com/olivere/jobqueue/mysql"
+)
+
+var (
+	errProcessorFailed = errors.New("processor failed")
 )
 
 func main() {
@@ -39,6 +44,9 @@ func main() {
 
 	if *ranks <= 0 {
 		log.Fatal("r must be greater than 0")
+	}
+	if *dburl == "" {
+		log.Fatal("specify a database connection string with -dburl like e.g. " + exampleDBURL)
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -127,7 +135,7 @@ func enqueuer(m *jobqueue.Manager, topics []string, ranks int, fillTime time.Dur
 		cnt++
 		cid := fmt.Sprintf("#%05d", cnt)
 		job := &jobqueue.Job{Topic: topic, Rank: rank, MaxRetry: maxRetry, CorrelationID: cid}
-		err := m.Add(job)
+		err := m.Add(context.Background(), job)
 		if err != nil {
 			return err
 		}
@@ -135,20 +143,14 @@ func enqueuer(m *jobqueue.Manager, topics []string, ranks int, fillTime time.Dur
 }
 
 func logger(m *jobqueue.Manager, d time.Duration) {
-	t := time.NewTicker(d)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			ss, err := m.Stats(&jobqueue.StatsRequest{})
-			if err == nil {
-				fmt.Printf("Waiting=%6d Working=%6d Succeeded=%6d Failed=%6d\n",
-					ss.Waiting,
-					ss.Working,
-					ss.Succeeded,
-					ss.Failed)
-			}
+	for range time.Tick(d) {
+		ss, err := m.Stats(context.Background(), &jobqueue.StatsRequest{})
+		if err == nil {
+			fmt.Printf("Waiting=%6d Working=%6d Succeeded=%6d Failed=%6d\n",
+				ss.Waiting,
+				ss.Working,
+				ss.Succeeded,
+				ss.Failed)
 		}
 	}
 }
@@ -158,7 +160,7 @@ func makeProcessor(topic string, failureRate float64, runTime time.Duration) job
 	return func(args ...interface{}) error {
 		time.Sleep(time.Duration(rand.Int63n(runTimeNanos)) * time.Nanosecond)
 		if rand.Float64() < failureRate {
-			return errors.New("processor failed")
+			return errProcessorFailed
 		}
 		return nil
 	}

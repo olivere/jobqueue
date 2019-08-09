@@ -5,6 +5,7 @@
 package jobqueue
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -29,7 +30,7 @@ func (st *InMemoryStore) Start() error {
 }
 
 // Create adds a new job.
-func (st *InMemoryStore) Create(job *Job) error {
+func (st *InMemoryStore) Create(ctx context.Context, job *Job) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.jobs[job.ID] = *job
@@ -37,7 +38,7 @@ func (st *InMemoryStore) Create(job *Job) error {
 }
 
 // Delete removes the job.
-func (st *InMemoryStore) Delete(job *Job) error {
+func (st *InMemoryStore) Delete(ctx context.Context, job *Job) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	delete(st.jobs, job.ID)
@@ -45,7 +46,7 @@ func (st *InMemoryStore) Delete(job *Job) error {
 }
 
 // Update updates the job.
-func (st *InMemoryStore) Update(job *Job) error {
+func (st *InMemoryStore) Update(ctx context.Context, job *Job) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	st.jobs[job.ID] = *job
@@ -69,7 +70,7 @@ func (st *InMemoryStore) Next() (*Job, error) {
 }
 
 // Stats returns statistics about the jobs in the store.
-func (st *InMemoryStore) Stats(req *StatsRequest) (*Stats, error) {
+func (st *InMemoryStore) Stats(ctx context.Context, req *StatsRequest) (*Stats, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	stats := &Stats{}
@@ -97,7 +98,7 @@ func (st *InMemoryStore) Stats(req *StatsRequest) (*Stats, error) {
 }
 
 // Lookup returns the job with the specified identifier (or ErrNotFound).
-func (st *InMemoryStore) Lookup(id string) (*Job, error) {
+func (st *InMemoryStore) Lookup(ctx context.Context, id string) (*Job, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	job, found := st.jobs[id]
@@ -110,7 +111,7 @@ func (st *InMemoryStore) Lookup(id string) (*Job, error) {
 
 // LookupByCorrelationID returns the details of jobs by their correlation identifier.
 // If no such job could be found, an empty array is returned.
-func (st *InMemoryStore) LookupByCorrelationID(correlationID string) ([]*Job, error) {
+func (st *InMemoryStore) LookupByCorrelationID(ctx context.Context, correlationID string) ([]*Job, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	var result []*Job
@@ -124,7 +125,7 @@ func (st *InMemoryStore) LookupByCorrelationID(correlationID string) ([]*Job, er
 }
 
 // List finds matching jobs.
-func (st *InMemoryStore) List(req *ListRequest) (*ListResponse, error) {
+func (st *InMemoryStore) List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	rsp := &ListResponse{}

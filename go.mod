@@ -1,11 +1,14 @@
 module github.com/olivere/jobqueue
 
+go 1.12
+
 require (
-	github.com/cenkalti/backoff v2.1.1+incompatible
-	github.com/globalsign/mgo v0.0.0-20180821103416-46bcd340f9a5
-	github.com/go-sql-driver/mysql v1.4.0
-	github.com/google/uuid v0.0.0-20171129191014-dec09d789f3d
-	github.com/gorilla/websocket v1.3.0
-	github.com/jinzhu/gorm v1.9.2-0.20180818231433-32455088f24d
-	github.com/jinzhu/inflection v0.0.0-20180308033659-04140366298a // indirect
+	github.com/Masterminds/squirrel v1.1.0
+	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
+	github.com/go-sql-driver/mysql v1.4.1
+	github.com/google/uuid v1.1.1
+	github.com/gorilla/websocket v1.4.0
+	github.com/mattn/go-sqlite3 v1.11.0
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
 )

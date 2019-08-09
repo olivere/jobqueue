@@ -1,9 +1,9 @@
 package mongodb
 
 import (
+	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -13,16 +13,8 @@ import (
 )
 
 const (
-	testDBURL = "mongodb://localhost/jobqueue_e2e"
+	testDBURL = "mongodb://localhost/jobqueue_test"
 )
-
-func isTravis() bool {
-	return os.Getenv("TRAVIS") != ""
-}
-
-func travisGoVersion() string {
-	return os.Getenv("TRAVIS_GO_VERSION")
-}
 
 // dropDatabase drops the database specified in the dburl connection string.
 func dropDatabase(t *testing.T, dburl string) {
@@ -48,11 +40,6 @@ func dropDatabase(t *testing.T, dburl string) {
 }
 
 func TestNewStore(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
 	defer dropDatabase(t, testDBURL)
 
 	_, err := NewStore(testDBURL)
@@ -64,11 +51,6 @@ func TestNewStore(t *testing.T) {
 // TestJobSuccess is the green case where a job is called and it is
 // processed without problems.
 func TestJobSuccess(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
 	jobDone := make(chan struct{}, 1)
 
 	st, err := NewStore(testDBURL)
@@ -102,7 +84,7 @@ func TestJobSuccess(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &jobqueue.Job{Topic: "topic", Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}

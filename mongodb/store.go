@@ -1,6 +1,7 @@
 package mongodb
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -110,7 +111,7 @@ func SetCollectionName(collectionName string) StoreOption {
 
 func (s *Store) wrapError(err error) error {
 	if err == mgo.ErrNotFound {
-		// Map gorm.ErrRecordNotFound to jobqueue-specific "not found" error
+		// Map mgo.ErrNotFound to jobqueue-specific "not found" error
 		return jobqueue.ErrNotFound
 	}
 	return err
@@ -130,7 +131,7 @@ func (s *Store) Start() error {
 }
 
 // Create adds a new job to the store.
-func (s *Store) Create(job *jobqueue.Job) error {
+func (s *Store) Create(ctx context.Context, job *jobqueue.Job) error {
 	j, err := newJob(job)
 	if err != nil {
 		return err
@@ -140,7 +141,7 @@ func (s *Store) Create(job *jobqueue.Job) error {
 }
 
 // Update updates the job in the store.
-func (s *Store) Update(job *jobqueue.Job) error {
+func (s *Store) Update(ctx context.Context, job *jobqueue.Job) error {
 	j, err := newJob(job)
 	if err != nil {
 		return err
@@ -160,12 +161,12 @@ func (s *Store) Next() (*jobqueue.Job, error) {
 }
 
 // Delete removes a job from the store.
-func (s *Store) Delete(job *jobqueue.Job) error {
+func (s *Store) Delete(ctx context.Context, job *jobqueue.Job) error {
 	return s.wrapError(s.coll.RemoveId(job.ID))
 }
 
 // Lookup retrieves a single job in the store by its identifier.
-func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
+func (s *Store) Lookup(ctx context.Context, id string) (*jobqueue.Job, error) {
 	var j Job
 	err := s.coll.FindId(id).One(&j)
 	if err != nil {
@@ -180,7 +181,7 @@ func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
 
 // LookupByCorrelationID returns the details of jobs by their correlation identifier.
 // If no such job could be found, an empty array is returned.
-func (s *Store) LookupByCorrelationID(correlationID string) ([]*jobqueue.Job, error) {
+func (s *Store) LookupByCorrelationID(ctx context.Context, correlationID string) ([]*jobqueue.Job, error) {
 	var jobs []Job
 	err := s.coll.Find(bson.M{"correlation_id": correlationID}).All(&jobs)
 	if err != nil {
@@ -198,7 +199,7 @@ func (s *Store) LookupByCorrelationID(correlationID string) ([]*jobqueue.Job, er
 }
 
 // List returns a list of all jobs stored in the data store.
-func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, error) {
+func (s *Store) List(ctx context.Context, request *jobqueue.ListRequest) (*jobqueue.ListResponse, error) {
 	rsp := &jobqueue.ListResponse{}
 
 	// Common filters for both Count and Find
@@ -240,7 +241,7 @@ func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, err
 }
 
 // Stats returns statistics about the jobs in the store.
-func (s *Store) Stats(req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
+func (s *Store) Stats(ctx context.Context, req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
 	buildFilter := func(state string) bson.M {
 		f := bson.M{"state": state}
 		if req.Topic != "" {

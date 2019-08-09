@@ -4,7 +4,10 @@
 
 package jobqueue
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 var (
 	// ErrNotFound must be returned from Store implementation when a certain job
@@ -20,14 +23,14 @@ type Store interface {
 	Start() error
 
 	// Create adds a job to the store.
-	Create(*Job) error
+	Create(context.Context, *Job) error
 
 	// Delete removes a job from the store.
-	Delete(*Job) error
+	Delete(context.Context, *Job) error
 
 	// Update updates a job in the store. This is called frequently as jobs
 	// are processed. Update must allow for concurrent updates, e.g. by locking.
-	Update(*Job) error
+	Update(context.Context, *Job) error
 
 	// Next picks the next job to execute.
 	//
@@ -41,18 +44,18 @@ type Store interface {
 	// Stats returns statistics about the store, e.g. the number of jobs
 	// waiting, working, succeeded, and failed. This is run when the manager
 	// starts up to get initial stats.
-	Stats(*StatsRequest) (*Stats, error)
+	Stats(context.Context, *StatsRequest) (*Stats, error)
 
 	// Lookup returns the details of a job by its identifier.
 	// If the job could not be found, ErrNotFound must be returned.
-	Lookup(string) (*Job, error)
+	Lookup(context.Context, string) (*Job, error)
 
 	// LookupByCorrelationID returns the details of jobs by their correlation identifier.
 	// If no such job could be found, an empty array is returned.
-	LookupByCorrelationID(string) ([]*Job, error)
+	LookupByCorrelationID(context.Context, string) ([]*Job, error)
 
 	// List returns a list of jobs filtered by the ListRequest.
-	List(*ListRequest) (*ListResponse, error)
+	List(context.Context, *ListRequest) (*ListResponse, error)
 }
 
 // StatsRequest returns information about the number of managed jobs.
