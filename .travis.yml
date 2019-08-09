@@ -27,6 +27,7 @@ before_install:
   - while ! nc -z localhost 3306; do sleep 1; done
   - while ! nc -z localhost 27017; do sleep 1; done
 install:
+  - go get github.com/mattn/go-sqlite3
   - go get ./...
 script:
   - go test -race -v ./...
