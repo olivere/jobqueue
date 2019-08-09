@@ -1,0 +1,25 @@
+version: '3'
+services:
+  mysql:
+    image: mysql:5.7
+    hostname: mysql
+    restart: always
+    environment:
+      - reschedule=on-node-failure
+      # - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_DATABASE=
+    command: mysqld --max_allowed_packet=30M
+    volumes:
+      # - ./data/mysql:/var/lib/mysql
+      - ./etc/mysql/:/docker-entrypoint-initdb.d
+    ports:
+      - 3306:3306
+  mongodb:
+    image: mongo:4.0
+    hostname: mongodb
+    restart: always
+    ports:
+      - 27017:27017
+#    volumes:
+#      - ./data/mongodb:/data/db

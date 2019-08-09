@@ -28,6 +28,10 @@ func main() {
 	)
 	flag.Parse()
 
+	if *dburl == "" {
+		log.Fatal("specify a database connection string with -dburl like e.g. " + exampleDBURL)
+	}
+
 	rand.Seed(time.Now().UnixNano())
 
 	// Initialize the store

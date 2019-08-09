@@ -5,6 +5,7 @@
 package jobqueue
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -232,7 +233,7 @@ func (m *Manager) CloseWithTimeout(timeout time.Duration) error {
 // Add gives the manager a new job to execute. If Add returns nil, the caller
 // can be sure the job is stored in the backing store. It will be picked up
 // by the scheduler at a later time.
-func (m *Manager) Add(job *Job) error {
+func (m *Manager) Add(ctx context.Context, job *Job) error {
 	if job.Topic == "" {
 		return errors.New("jobqueue: no topic specified")
 	}
@@ -247,7 +248,7 @@ func (m *Manager) Add(job *Job) error {
 	job.Retry = 0
 	job.Priority = -time.Now().UnixNano()
 	job.Created = time.Now().UnixNano()
-	err := m.st.Create(job)
+	err := m.st.Create(ctx, job)
 	if err != nil {
 		return err
 	}
@@ -258,25 +259,30 @@ func (m *Manager) Add(job *Job) error {
 // -- Stats, Lookup and List --
 
 // Stats returns current statistics about the job queue.
-func (m *Manager) Stats(request *StatsRequest) (*Stats, error) {
-	return m.st.Stats(request)
+func (m *Manager) Stats(ctx context.Context, request *StatsRequest) (*Stats, error) {
+	return m.st.Stats(ctx, request)
 }
 
 // Lookup returns the job with the specified identifer.
 // If no such job exists, ErrNotFound is returned.
-func (m *Manager) Lookup(id string) (*Job, error) {
-	return m.st.Lookup(id)
+func (m *Manager) Lookup(ctx context.Context, id string) (*Job, error) {
+	return m.st.Lookup(ctx, id)
 }
 
 // LookupByCorrelationID returns the details of jobs by their correlation identifier.
 // If no such job could be found, an empty array is returned.
-func (m *Manager) LookupByCorrelationID(correlationID string) ([]*Job, error) {
-	return m.st.LookupByCorrelationID(correlationID)
+func (m *Manager) LookupByCorrelationID(ctx context.Context, correlationID string) ([]*Job, error) {
+	return m.st.LookupByCorrelationID(ctx, correlationID)
 }
 
 // List returns all jobs matching the parameters in the request.
-func (m *Manager) List(request *ListRequest) (*ListResponse, error) {
-	return m.st.List(request)
+func (m *Manager) List(ctx context.Context, request *ListRequest) (*ListResponse, error) {
+	if request.Limit < 0 {
+		request.Limit = 0
+	} else if request.Limit == 0 {
+		request.Limit = 10
+	}
+	return m.st.List(ctx, request)
 }
 
 // -- Scheduler --
@@ -315,7 +321,7 @@ func (m *Manager) schedule() {
 				m.mu.Lock()
 				job.State = Working
 				job.Started = time.Now().UnixNano()
-				err = m.st.Update(job)
+				err = m.st.Update(context.Background(), job)
 				if err != nil {
 					m.mu.Unlock()
 					m.logger.Printf("jobqueue: error updating job: %v", err)

@@ -1,17 +1,20 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
-	mysqldriver "github.com/go-sql-driver/mysql"
-	"github.com/jinzhu/gorm"
+	sq "github.com/Masterminds/squirrel"
+	"github.com/go-sql-driver/mysql"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/olivere/jobqueue"
+	"github.com/olivere/jobqueue/mysql/internal"
 )
 
 const (
@@ -42,13 +45,24 @@ index ix_jobs_last_mod (last_mod));`
 
 	// add correlation_group column and index on (correlation_group, correlation_id)
 	mysqlUpdate002 = `ALTER TABLE jobqueue_jobs ADD correlation_group varchar(255), ADD INDEX ix_jobs_correlation_group_and_id (correlation_group, correlation_id);`
+
+	// add index on state and correlation_group and id
+	mysqlUpdate003 = `ALTER TABLE jobqueue_jobs ADD INDEX ix_jobs_state_correlation_group_and_id (state, correlation_group, id);`
 )
 
 // Store represents a persistent MySQL storage implementation.
 // It implements the jobqueue.Store interface.
 type Store struct {
-	db    *gorm.DB
+	db    *sql.DB
 	debug bool
+
+	stmtOnce           sync.Once
+	createStmt         *sql.Stmt
+	updateStmt         *sql.Stmt
+	deleteStmt         *sql.Stmt
+	nextStmt           *sql.Stmt
+	lookupStmt         *sql.Stmt
+	lookupByCorrIDStmt *sql.Stmt
 }
 
 // StoreOption is an options provider for Store.
@@ -60,7 +74,7 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	for _, opt := range options {
 		opt(st)
 	}
-	cfg, err := mysqldriver.ParseDSN(url)
+	cfg, err := mysql.ParseDSN(url)
 	if err != nil {
 		return nil, err
 	}
@@ -70,35 +84,32 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	}
 	// First connect without DB name
 	cfg.DBName = ""
-	setupdb, err := gorm.Open("mysql", cfg.FormatDSN())
+	initdb, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
 		return nil, err
 	}
-	defer setupdb.Close()
+	defer initdb.Close()
 	// Create database
-	_, err = setupdb.DB().Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbname))
+	_, err = initdb.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbname))
 	if err != nil {
 		return nil, err
 	}
 
 	// Now connect again, this time with the db name
-	st.db, err = gorm.Open("mysql", url)
+	st.db, err = sql.Open("mysql", url)
 	if err != nil {
 		return nil, err
 	}
-	if st.debug {
-		st.db = st.db.Debug()
-	}
 
 	// Create schema
-	_, err = st.db.DB().Exec(mysqlSchema)
+	_, err = st.db.Exec(mysqlSchema)
 	if err != nil {
 		return nil, err
 	}
 
 	// Apply update 001
 	var count int64
-	err = st.db.DB().QueryRow(`
+	err = st.db.QueryRow(`
 	SELECT COUNT(*) AS cnt
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
@@ -110,14 +121,14 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	}
 	if count == 0 {
 		// Apply migration
-		_, err = st.db.DB().Exec(mysqlUpdate001)
+		_, err = st.db.Exec(mysqlUpdate001)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Apply update 002
-	err = st.db.DB().QueryRow(`
+	err = st.db.QueryRow(`
 		SELECT COUNT(*) AS cnt
 			FROM information_schema.COLUMNS
 			WHERE TABLE_SCHEMA = ?
@@ -129,7 +140,26 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	}
 	if count == 0 {
 		// Apply migration
-		_, err = st.db.DB().Exec(mysqlUpdate002)
+		_, err = st.db.Exec(mysqlUpdate002)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply update 003
+	err = st.db.QueryRow(`
+		SELECT COUNT(*) AS cnt
+			FROM information_schema.STATISTICS
+			WHERE TABLE_SCHEMA = ?
+			AND TABLE_NAME = 'jobqueue_jobs'
+			AND INDEX_NAME = 'ix_jobs_state_correlation_group_and_id'
+		`, dbname).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		// Apply migration
+		_, err = st.db.Exec(mysqlUpdate003)
 		if err != nil {
 			return nil, err
 		}
@@ -146,95 +176,214 @@ func SetDebug(enabled bool) StoreOption {
 	}
 }
 
-/*
-func SetCleaner(interval, expiry time.Duration) StoreOption {
-	return func(s *Store) {
-		s.interval = interval
-		s.expiry = expiry
+func (s *Store) initStmt() {
+	var err error
+
+	// Create statement
+	s.createStmt, err = s.db.Prepare("INSERT INTO jobqueue_jobs (id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+	if err != nil {
+		panic(err)
+	}
+
+	// Update statement
+	s.updateStmt, err = s.db.Prepare("UPDATE jobqueue_jobs SET topic=?,state=?,args=?,rank=?,priority=?,retry=?,max_retry=?,correlation_group=?,correlation_id=?,created=?,started=?,completed=?,last_mod=? WHERE id=?")
+	if err != nil {
+		panic(err)
+	}
+
+	// Delete statement
+	s.deleteStmt, err = s.db.Prepare("DELETE FROM jobqueue_jobs WHERE id=?")
+	if err != nil {
+		panic(err)
+	}
+
+	// Next statement
+	s.nextStmt, err = s.db.Prepare("SELECT id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod FROM jobqueue_jobs WHERE state=? ORDER BY rank DESC, priority DESC LIMIT 1")
+	if err != nil {
+		panic(err)
+	}
+
+	// Lookup (by id) statement
+	s.lookupStmt, err = s.db.Prepare("SELECT id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod FROM jobqueue_jobs WHERE id=? LIMIT 1")
+	if err != nil {
+		panic(err)
+	}
+
+	// Lookup by correlation id
+	s.lookupByCorrIDStmt, err = s.db.Prepare("SELECT id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod FROM jobqueue_jobs WHERE correlation_id=? LIMIT 1")
+	if err != nil {
+		panic(err)
 	}
 }
-*/
 
 func (s *Store) wrapError(err error) error {
-	if err == gorm.ErrRecordNotFound {
-		// Map gorm.ErrRecordNotFound to jobqueue-specific "not found" error
+	if internal.IsNotFound(err) {
+		// Map specific errors to jobqueue-specific "not found" error
 		return jobqueue.ErrNotFound
 	}
 	return err
-}
-
-func (s *Store) runWithRetry(fn func() error) error {
-	b := backoff.NewExponentialBackOff()
-	b.MaxInterval = 5 * time.Second
-	b.MaxElapsedTime = 15 * time.Second
-	return backoff.Retry(fn, b)
 }
 
 // Start is called when the manager starts up.
 // We ensure that stale jobs are marked as failed so that we have place
 // for new jobs.
 func (s *Store) Start() error {
-	// TODO This will fail if we have two or more job queues working on the same database!
-	err := s.db.Model(&Job{}).
-		Where("state = ?", jobqueue.Working).
-		Updates(map[string]interface{}{
-			"state":     jobqueue.Failed,
-			"completed": time.Now().UnixNano(),
-		}).
-		Error
-	return s.wrapError(err)
+	s.stmtOnce.Do(s.initStmt)
+
+	ctx := context.Background()
+	err := internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(
+			ctx,
+			`UPDATE jobqueue_jobs SET state = ?, completed = ? WHERE state = ?`,
+			jobqueue.Failed,
+			time.Now().UnixNano(),
+			jobqueue.Working,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
+	})
+	if err != nil {
+		return s.wrapError(err)
+	}
+	return nil
 }
 
 // Create adds a new job to the store.
-func (s *Store) Create(job *jobqueue.Job) error {
+func (s *Store) Create(ctx context.Context, job *jobqueue.Job) error {
+	s.stmtOnce.Do(s.initStmt)
+
 	j, err := newJob(job)
 	if err != nil {
 		return err
 	}
 	j.LastMod = j.Created
-	err = s.runWithRetry(func() error {
-		return s.db.Create(j).Error
+
+	err = internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+		res, err := tx.Stmt(s.createStmt).ExecContext(
+			ctx,
+			j.ID,
+			j.Topic,
+			j.State,
+			j.Args,
+			j.Rank,
+			j.Priority,
+			j.Retry,
+			j.MaxRetry,
+			j.CorrelationGroup,
+			j.CorrelationID,
+			j.Created,
+			j.Started,
+			j.Completed,
+			j.LastMod,
+		)
+		if err != nil {
+			return err
+		}
+		rowsAffected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rowsAffected != 1 {
+			return err
+		}
+		return nil
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
 	})
 	return s.wrapError(err)
 }
 
 // Update updates the job in the store.
-func (s *Store) Update(job *jobqueue.Job) error {
+func (s *Store) Update(ctx context.Context, job *jobqueue.Job) error {
+	s.stmtOnce.Do(s.initStmt)
+
 	j, err := newJob(job)
 	if err != nil {
 		return err
 	}
-	return s.runWithRetry(func() error {
-		tx := s.db.Begin()
-		var ids []string
-		err = tx.Raw("SELECT id FROM jobqueue_jobs WHERE id = ? AND last_mod = ? FOR UPDATE", job.ID, job.Updated).
-			Scan(&ids).
-			Error
+
+	err = internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(
+			ctx,
+			`SELECT id FROM jobqueue_jobs WHERE id = ? AND last_mod = ? FOR UPDATE`,
+			job.ID,
+			job.Updated,
+		).Scan(&id)
 		if err != nil {
-			tx.Rollback()
-			return s.wrapError(err)
+			return err
 		}
 		j.LastMod = time.Now().UnixNano()
-		if err := tx.Save(&j).Error; err != nil {
-			tx.Rollback()
-			return s.wrapError(err)
+		res, err := tx.Stmt(s.updateStmt).ExecContext(
+			ctx,
+			j.Topic,
+			j.State,
+			j.Args,
+			j.Rank,
+			j.Priority,
+			j.Retry,
+			j.MaxRetry,
+			j.CorrelationGroup,
+			j.CorrelationID,
+			j.Created,
+			j.Started,
+			j.Completed,
+			j.LastMod,
+			j.ID,
+		)
+		if err != nil {
+			return err
 		}
-		if err := tx.Commit().Error; err != nil {
-			return s.wrapError(err)
+		rowsAffected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rowsAffected != 1 {
+			return err
 		}
 		job.Updated = j.LastMod
 		return nil
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
 	})
+	return s.wrapError(err)
 }
 
 // Next picks the next job to execute, or nil if no executable job is available.
 func (s *Store) Next() (*jobqueue.Job, error) {
+	s.stmtOnce.Do(s.initStmt)
+
 	var j Job
-	err := s.db.Where("state = ?", jobqueue.Waiting).
-		Order("rank desc, priority desc").
-		First(&j).
-		Error
-	if err == gorm.ErrRecordNotFound {
+	ctx := context.Background()
+	err := internal.RunWithRetry(ctx, s.db, func(ctx context.Context) error {
+		err := s.nextStmt.QueryRowContext(ctx, jobqueue.Waiting).Scan(
+			&j.ID,
+			&j.Topic,
+			&j.State,
+			&j.Args,
+			&j.Rank,
+			&j.Priority,
+			&j.Retry,
+			&j.MaxRetry,
+			&j.CorrelationGroup,
+			&j.CorrelationID,
+			&j.Created,
+			&j.Started,
+			&j.Completed,
+			&j.LastMod,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
+	})
+	if internal.IsNotFound(err) {
 		return nil, jobqueue.ErrNotFound
 	}
 	if err != nil {
@@ -244,32 +393,102 @@ func (s *Store) Next() (*jobqueue.Job, error) {
 }
 
 // Delete removes a job from the store.
-func (s *Store) Delete(job *jobqueue.Job) error {
-	return s.runWithRetry(func() error {
-		err := s.db.Where("id = ?", job.ID).Delete(&Job{}).Error
-		return s.wrapError(err)
+func (s *Store) Delete(ctx context.Context, job *jobqueue.Job) error {
+	s.stmtOnce.Do(s.initStmt)
+
+	err := internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.Stmt(s.deleteStmt).ExecContext(ctx, job.ID)
+		switch {
+		case err == sql.ErrNoRows:
+			return nil
+		default:
+			return err
+		}
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
 	})
+	return s.wrapError(err)
 }
 
 // Lookup retrieves a single job in the store by its identifier.
-func (s *Store) Lookup(id string) (*jobqueue.Job, error) {
+func (s *Store) Lookup(ctx context.Context, id string) (*jobqueue.Job, error) {
+	s.stmtOnce.Do(s.initStmt)
+
 	var j Job
-	err := s.db.Where("id = ?", id).First(&j).Error
+	err := internal.RunWithRetry(ctx, s.db, func(ctx context.Context) error {
+		err := s.lookupStmt.QueryRowContext(ctx, id).Scan(
+			&j.ID,
+			&j.Topic,
+			&j.State,
+			&j.Args,
+			&j.Rank,
+			&j.Priority,
+			&j.Retry,
+			&j.MaxRetry,
+			&j.CorrelationGroup,
+			&j.CorrelationID,
+			&j.Created,
+			&j.Started,
+			&j.Completed,
+			&j.LastMod,
+		)
+		if err != nil {
+			return err
+		}
+		return nil
+
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
+	})
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
-	job, err := j.ToJob()
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-	return job, nil
+	return j.ToJob()
 }
 
 // LookupByCorrelationID returns the details of jobs by their correlation identifier.
 // If no such job could be found, an empty array is returned.
-func (s *Store) LookupByCorrelationID(correlationID string) ([]*jobqueue.Job, error) {
+func (s *Store) LookupByCorrelationID(ctx context.Context, correlationID string) ([]*jobqueue.Job, error) {
+	s.stmtOnce.Do(s.initStmt)
+
 	var jobs []Job
-	err := s.db.Where("correlation_id = ?", correlationID).Find(&jobs).Error
+	err := internal.RunWithRetry(ctx, s.db, func(ctx context.Context) error {
+		rows, err := s.lookupByCorrIDStmt.QueryContext(ctx, correlationID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var j Job
+			err := rows.Scan(
+				&j.ID,
+				&j.Topic,
+				&j.State,
+				&j.Args,
+				&j.Rank,
+				&j.Priority,
+				&j.Retry,
+				&j.MaxRetry,
+				&j.CorrelationGroup,
+				&j.CorrelationID,
+				&j.Created,
+				&j.Started,
+				&j.Completed,
+				&j.LastMod,
+			)
+			if err != nil {
+				return err
+			}
+			jobs = append(jobs, j)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return nil
+
+	}, func(err error) bool {
+		return internal.IsDeadlock(err)
+	})
 	if err != nil {
 		return nil, s.wrapError(err)
 	}
@@ -285,86 +504,176 @@ func (s *Store) LookupByCorrelationID(correlationID string) ([]*jobqueue.Job, er
 }
 
 // List returns a list of all jobs stored in the data store.
-func (s *Store) List(request *jobqueue.ListRequest) (*jobqueue.ListResponse, error) {
-	rsp := &jobqueue.ListResponse{}
+func (s *Store) List(ctx context.Context, request *jobqueue.ListRequest) (*jobqueue.ListResponse, error) {
+	s.stmtOnce.Do(s.initStmt)
+
+	resp := &jobqueue.ListResponse{}
+
+	columns := "id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod"
+	where := make(map[string]interface{})
+	countBuilder := sq.Select("COUNT(*)").From("jobqueue_jobs")
+	queryBuilder := sq.Select(columns).From("jobqueue_jobs")
+
+	// Filters
+	if v := request.Topic; v != "" {
+		where["topic"] = v
+	}
+	if v := request.State; v != "" {
+		where["state"] = v
+	}
+	if v := request.CorrelationGroup; v != "" {
+		where["correlation_group"] = v
+	}
+	if v := request.CorrelationID; v != "" {
+		where["correlation_id"] = v
+	}
 
 	// Count
-	qry := s.db.Model(&Job{})
-	if request.Topic != "" {
-		qry = qry.Where("topic = ?", request.Topic)
-	}
-	if request.State != "" {
-		qry = qry.Where("state = ?", request.State)
-	}
-	if request.CorrelationGroup != "" {
-		qry = qry.Where("correlation_group = ?", request.CorrelationGroup)
-	}
-	if request.CorrelationID != "" {
-		qry = qry.Where("correlation_id = ?", request.CorrelationID)
-	}
-	err := qry.Count(&rsp.Total).Error
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-
-	// Find
-	qry = s.db.Order("last_mod desc").
-		Offset(request.Offset).
-		Limit(request.Limit)
-	if request.Topic != "" {
-		qry = qry.Where("topic = ?", request.Topic)
-	}
-	if request.State != "" {
-		qry = qry.Where("state = ?", request.State)
-	}
-	if request.CorrelationGroup != "" {
-		qry = qry.Where("correlation_group = ?", request.CorrelationGroup)
-	}
-	if request.CorrelationID != "" {
-		qry = qry.Where("correlation_id = ?", request.CorrelationID)
-	}
-	var list []*Job
-	err = qry.Find(&list).Error
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-	for _, j := range list {
-		job, err := j.ToJob()
+	countBuilder = sq.Select("COUNT(*)").From("jobqueue_jobs").Where(where)
+	{
+		sql, args, err := countBuilder.ToSql()
 		if err != nil {
 			return nil, s.wrapError(err)
 		}
-		rsp.Jobs = append(rsp.Jobs, job)
+		err = s.db.QueryRowContext(ctx, sql, args...).Scan(
+			&resp.Total,
+		)
+		if err != nil {
+			return nil, s.wrapError(err)
+		}
 	}
-	return rsp, nil
+
+	// Iterate
+	queryBuilder = sq.Select(columns).
+		From("jobqueue_jobs").
+		Where(where).
+		OrderBy("last_mod DESC").
+		Offset(uint64(request.Offset)).Limit(uint64(request.Limit))
+	{
+		sql, args, err := queryBuilder.ToSql()
+		if err != nil {
+			return nil, s.wrapError(err)
+		}
+		rows, err := s.db.QueryContext(ctx, sql, args...)
+		if err != nil {
+			return nil, s.wrapError(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var j Job
+			err := rows.Scan(
+				&j.ID,
+				&j.Topic,
+				&j.State,
+				&j.Args,
+				&j.Rank,
+				&j.Priority,
+				&j.Retry,
+				&j.MaxRetry,
+				&j.CorrelationGroup,
+				&j.CorrelationID,
+				&j.Created,
+				&j.Started,
+				&j.Completed,
+				&j.LastMod,
+			)
+			if err != nil {
+				return nil, s.wrapError(err)
+			}
+			job, err := j.ToJob()
+			if err != nil {
+				return nil, s.wrapError(err)
+			}
+			resp.Jobs = append(resp.Jobs, job)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, s.wrapError(err)
+		}
+	}
+
+	return resp, nil
 }
 
 // Stats returns statistics about the jobs in the store.
-func (s *Store) Stats(req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
+func (s *Store) Stats(ctx context.Context, req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
+	s.stmtOnce.Do(s.initStmt)
+
 	stats := new(jobqueue.Stats)
-	buildFilter := func(state string) *gorm.DB {
-		f := s.db.Model(&Job{}).Where("state = ?", state)
-		if req.Topic != "" {
-			f = f.Where("topic = ?", req.Topic)
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Waiting
+	g.Go(func() error {
+		where := map[string]interface{}{
+			"state": jobqueue.Waiting,
 		}
-		if req.CorrelationGroup != "" {
-			f = f.Where("correlation_group = ?", req.CorrelationGroup)
+		if v := req.Topic; v != "" {
+			where["topic"] = v
 		}
-		return f
-	}
-	err := buildFilter(jobqueue.Waiting).Count(&stats.Waiting).Error
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-	err = buildFilter(jobqueue.Working).Count(&stats.Working).Error
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-	err = buildFilter(jobqueue.Succeeded).Count(&stats.Succeeded).Error
-	if err != nil {
-		return nil, s.wrapError(err)
-	}
-	err = buildFilter(jobqueue.Failed).Count(&stats.Failed).Error
-	if err != nil {
+		if v := req.CorrelationGroup; v != "" {
+			where["correlation_group"] = v
+		}
+		sql, args, err := sq.Select("COUNT(*)").From("jobqueue_jobs").Where(where).ToSql()
+		if err != nil {
+			return err
+		}
+		return s.db.QueryRowContext(ctx, sql, args...).Scan(&stats.Waiting)
+	})
+
+	// Working
+	g.Go(func() error {
+		where := map[string]interface{}{
+			"state": jobqueue.Working,
+		}
+		if v := req.Topic; v != "" {
+			where["topic"] = v
+		}
+		if v := req.CorrelationGroup; v != "" {
+			where["correlation_group"] = v
+		}
+		sql, args, err := sq.Select("COUNT(*)").From("jobqueue_jobs").Where(where).ToSql()
+		if err != nil {
+			return err
+		}
+		return s.db.QueryRowContext(ctx, sql, args...).Scan(&stats.Working)
+	})
+
+	// Succeeded
+	g.Go(func() error {
+		where := map[string]interface{}{
+			"state": jobqueue.Succeeded,
+		}
+		if v := req.Topic; v != "" {
+			where["topic"] = v
+		}
+		if v := req.CorrelationGroup; v != "" {
+			where["correlation_group"] = v
+		}
+		sql, args, err := sq.Select("COUNT(*)").From("jobqueue_jobs").Where(where).ToSql()
+		if err != nil {
+			return err
+		}
+		return s.db.QueryRowContext(ctx, sql, args...).Scan(&stats.Succeeded)
+	})
+
+	// Failed
+	g.Go(func() error {
+		where := map[string]interface{}{
+			"state": jobqueue.Failed,
+		}
+		if v := req.Topic; v != "" {
+			where["topic"] = v
+		}
+		if v := req.CorrelationGroup; v != "" {
+			where["correlation_group"] = v
+		}
+		sql, args, err := sq.Select("COUNT(*)").From("jobqueue_jobs").Where(where).ToSql()
+		if err != nil {
+			return err
+		}
+		return s.db.QueryRowContext(ctx, sql, args...).Scan(&stats.Failed)
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, s.wrapError(err)
 	}
 	return stats, nil
@@ -373,7 +682,7 @@ func (s *Store) Stats(req *jobqueue.StatsRequest) (*jobqueue.Stats, error) {
 // -- MySQL-internal representation of a task --
 
 type Job struct {
-	ID               string `gorm:"primary_key"`
+	ID               string
 	Topic            string
 	State            string
 	Args             sql.NullString
@@ -387,10 +696,6 @@ type Job struct {
 	Started          int64
 	Completed        int64
 	LastMod          int64
-}
-
-func (Job) TableName() string {
-	return "jobqueue_jobs"
 }
 
 func newJob(job *jobqueue.Job) (*Job, error) {

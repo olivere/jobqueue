@@ -1,6 +1,7 @@
 package jobqueue
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -52,28 +53,28 @@ func (w *worker) process(job *Job) error {
 	// Execute the job
 	err := p(job.Args...)
 	if err != nil {
-		w.m.logger.Printf("jobqueue: Job %v failed with: %v", job.ID, err)
-
 		if job.Retry >= job.MaxRetry {
 			// Failed
+			w.m.logger.Printf("jobqueue: Job %v failed after %d retries: %v", job.ID, job.Retry+1, err)
 			w.m.testJobFailed() // testing hook
 			job.State = Failed
 			job.Completed = time.Now().UnixNano()
-			return w.m.st.Update(job)
+			return w.m.st.Update(context.Background(), job)
 		}
 
 		// Retry
+		w.m.logger.Printf("jobqueue: Job %v failed on try %d of %d: %v", job.ID, job.Retry+1, job.MaxRetry, err)
 		w.m.testJobRetry() // testing hook
 		job.Priority = -time.Now().Add(w.m.backoff(job.Retry)).UnixNano()
 		job.State = Waiting
 		job.Retry++
-		return w.m.st.Update(job)
+		return w.m.st.Update(context.Background(), job)
 	}
 
 	// Successfully executed the job
 	job.State = Succeeded
 	job.Completed = time.Now().UnixNano()
-	err = w.m.st.Update(job)
+	err = w.m.st.Update(context.Background(), job)
 	if err != nil {
 		return err
 	}

@@ -49,6 +49,12 @@ $(function() {
       conn.onopen = function(evt) {
         connected = true;
         $('#CONNECTED').show();
+        $('#JOB_DETAILS_JOB').html('');
+        $('#JOB_DETAILS_MESSAGE').html('');
+        $('#JOBS_WAITING').html('');
+        $('#JOBS_WORKING').html('');
+        $('#JOBS_SUCCEEDED').html('');
+        $('#JOBS_FAILED').html('');
         $('#DISCONNECTED').hide();
       }
 

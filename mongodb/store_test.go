@@ -1,9 +1,12 @@
 package mongodb
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,48 +16,38 @@ import (
 )
 
 const (
-	testDBURL = "mongodb://localhost/jobqueue_e2e"
+	testDBURL = "mongodb://localhost/jobqueue_test"
 )
 
-func isTravis() bool {
-	return os.Getenv("TRAVIS") != ""
-}
+func TestMain(m *testing.M) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-func travisGoVersion() string {
-	return os.Getenv("TRAVIS_GO_VERSION")
-}
-
-// dropDatabase drops the database specified in the dburl connection string.
-func dropDatabase(t *testing.T, dburl string) {
-	uri, err := url.Parse(dburl)
+	uri, err := url.Parse(testDBURL)
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to parse connection string %q: %v", testDBURL, err))
 	}
 	if uri.Path == "" || uri.Path == "/" {
-		t.Fatalf("no database specified in %q", dburl)
+		panic(fmt.Sprintf("no database specified in connection string %q", testDBURL))
 	}
-	dbname := uri.Path[1:]
+	dbname := strings.TrimLeft(uri.Path, "/") // uri.Path[1:]
 
-	session, err := mgo.DialWithTimeout(dburl, 15*time.Second)
+	session, err := mgo.DialWithTimeout(testDBURL, 15*time.Second)
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to connect to %q: %v", testDBURL, err))
 	}
 	defer session.Close()
 
+	code := m.Run()
+
 	err = session.DB(dbname).DropDatabase()
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to drop database in connection string %q: %v", testDBURL, err))
 	}
+
+	os.Exit(code)
 }
 
-func TestNewStore(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
-	defer dropDatabase(t, testDBURL)
-
+func TestMongoDBNewStore(t *testing.T) {
 	_, err := NewStore(testDBURL)
 	if err != nil {
 		t.Fatalf("NewStore returned %v", err)
@@ -63,19 +56,13 @@ func TestNewStore(t *testing.T) {
 
 // TestJobSuccess is the green case where a job is called and it is
 // processed without problems.
-func TestJobSuccess(t *testing.T) {
-	if !isTravis() {
-		t.Skip("skipping integration test; it will only run on travis")
-		return
-	}
-
+func TestMongoDBJobSuccess(t *testing.T) {
 	jobDone := make(chan struct{}, 1)
 
 	st, err := NewStore(testDBURL)
 	if err != nil {
 		t.Fatalf("NewStore returned %v", err)
 	}
-	defer dropDatabase(t, testDBURL)
 
 	m := jobqueue.New(jobqueue.SetStore(st))
 
@@ -102,7 +89,7 @@ func TestJobSuccess(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &jobqueue.Job{Topic: "topic", Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}

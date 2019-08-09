@@ -6,6 +6,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -73,7 +74,7 @@ func (c *connection) readPump() {
 				Job     *jobqueue.Job `json:"job,omitempty"`
 			}
 			rsp.Type = "JOB_LOOKUP"
-			t, err := c.m.Lookup(msg.ID)
+			t, err := c.m.Lookup(context.Background(), msg.ID)
 			if err != nil {
 				if err == jobqueue.ErrNotFound {
 					rsp.Message = "Job already removed"

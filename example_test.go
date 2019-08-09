@@ -1,6 +1,7 @@
 package jobqueue_test
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -37,7 +38,7 @@ func ExampleManager() {
 
 	// Add a new crawler job
 	job := &jobqueue.Job{Topic: "crawl", Args: []interface{}{"https://alt-f4.de"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		fmt.Println("Add failed")
 		return

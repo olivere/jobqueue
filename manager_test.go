@@ -5,6 +5,7 @@
 package jobqueue
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -115,7 +116,7 @@ func TestJobSuccess(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &Job{Topic: "topic", Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}
@@ -182,7 +183,7 @@ func TestJobFailure(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &Job{Topic: "topic", Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}
@@ -251,7 +252,7 @@ func TestJobSuccessAfterRetry(t *testing.T) {
 		t.Fatalf("Start failed with %v", err)
 	}
 	job := &Job{Topic: "topic", MaxRetry: 1, Args: []interface{}{"Hello"}}
-	err = m.Add(job)
+	err = m.Add(context.Background(), job)
 	if err != nil {
 		t.Fatalf("Add failed with %v", err)
 	}
