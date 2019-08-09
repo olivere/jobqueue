@@ -179,24 +179,6 @@ func SetDebug(enabled bool) StoreOption {
 func (s *Store) initStmt() {
 	var err error
 
-	/*
-		jobqueue_jobs (
-		id varchar(36) primary key,
-		topic varchar(255),
-		state varchar(30),
-		args text,
-		rank bigint,
-		priority bigint,
-		retry integer,
-		max_retry integer,
-		correlation_group varchar(255),
-		correlation_id varchar(255),
-		created bigint,
-		started bigint,
-		completed bigint,
-		last_mod bigint,
-	*/
-
 	// Create statement
 	s.createStmt, err = s.db.Prepare("INSERT INTO jobqueue_jobs (id,topic,state,args,rank,priority,retry,max_retry,correlation_group,correlation_id,created,started,completed,last_mod) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 	if err != nil {

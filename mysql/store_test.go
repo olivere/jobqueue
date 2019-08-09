@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -16,34 +18,43 @@ const (
 	testDBURL = "root@tcp(127.0.0.1:3306)/jobqueue_test?loc=UTC&parseTime=true"
 )
 
-// dropDatabase drops the database specified in the dburl connection string.
-func dropDatabase(t *testing.T, dburl string) {
-	cfg, err := mysql.ParseDSN(dburl)
+func TestMain(m *testing.M) {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	cfg, err := mysql.ParseDSN(testDBURL)
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to parse connection string %q: %v", testDBURL, err))
 	}
 	dbname := cfg.DBName
 	if dbname == "" {
-		t.Fatal("no database specified")
+		panic(fmt.Sprintf("no database specified in connection string %q", testDBURL))
 	}
 	// Connect without DB name
 	cfg.DBName = ""
 	db, err := sql.Open("mysql", cfg.FormatDSN())
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to open connection string %q: %v", cfg.FormatDSN(), err))
 	}
 	defer db.Close()
 
 	// Create database
+	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbname))
+	if err != nil {
+		panic(fmt.Sprintf("unable to create database %q from connection string %q: %v", dbname, testDBURL, err))
+	}
+
+	code := m.Run()
+
+	// Drop database
 	_, err = db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbname))
 	if err != nil {
-		t.Fatal(err)
+		panic(fmt.Sprintf("unable to drop database %q from connection string %q: %v", dbname, testDBURL, err))
 	}
+
+	os.Exit(code)
 }
 
-func TestNewStore(t *testing.T) {
-	defer dropDatabase(t, testDBURL)
-
+func TestMySQLNewStore(t *testing.T) {
 	_, err := NewStore(testDBURL, SetDebug(true))
 	if err != nil {
 		t.Fatalf("NewStore returned %v", err)
@@ -52,14 +63,13 @@ func TestNewStore(t *testing.T) {
 
 // TestJobSuccess is the green case where a job is called and it is
 // processed without problems.
-func TestJobSuccess(t *testing.T) {
+func TestMySQLJobSuccess(t *testing.T) {
 	jobDone := make(chan struct{}, 1)
 
 	st, err := NewStore(testDBURL, SetDebug(true))
 	if err != nil {
 		t.Fatalf("NewStore returned %v", err)
 	}
-	defer dropDatabase(t, testDBURL)
 
 	m := jobqueue.New(jobqueue.SetStore(st))
 
