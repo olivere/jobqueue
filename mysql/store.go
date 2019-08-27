@@ -48,6 +48,9 @@ index ix_jobs_last_mod (last_mod));`
 
 	// add index on state and correlation_group and id
 	mysqlUpdate003 = `ALTER TABLE jobqueue_jobs ADD INDEX ix_jobs_state_correlation_group_and_id (state, correlation_group, id);`
+
+	// change args from text to mediumtext
+	mysqlUpdate004 = `ALTER TABLE jobqueue_jobs CHANGE COLUMN args args MEDIUMTEXT;`
 )
 
 // Store represents a persistent MySQL storage implementation.
@@ -160,6 +163,26 @@ func NewStore(url string, options ...StoreOption) (*Store, error) {
 	if count == 0 {
 		// Apply migration
 		_, err = st.db.Exec(mysqlUpdate003)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply update 004
+	err = st.db.QueryRow(`
+		SELECT COUNT(*) AS cnt
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = ?
+			AND TABLE_NAME = 'jobqueue_jobs'
+			AND COLUMN_NAME = 'args'
+			AND DATA_TYPE = 'text'
+		`, dbname).Scan(&count)
+	if err != nil {
+		return nil, err
+	}
+	if count == 1 {
+		// Apply migration
+		_, err = st.db.Exec(mysqlUpdate004)
 		if err != nil {
 			return nil, err
 		}
