@@ -120,13 +120,18 @@ func (s *Store) wrapError(err error) error {
 // Start is called when the manager starts up.
 // We ensure that stale jobs are marked as failed so that we have place
 // for new jobs.
-func (s *Store) Start() error {
-	// TODO This will fail if we have two or more job queues working on the same database!
-	change := bson.M{"$set": bson.M{"state": jobqueue.Failed, "completed": time.Now().UnixNano()}}
-	_, err := s.coll.UpdateAll(
-		bson.M{"state": jobqueue.Working},
-		change,
-	)
+func (s *Store) Start(b jobqueue.StartupBehaviour) error {
+	var err error
+
+	if b == jobqueue.MarkAsFailed {
+		// This will fail if we have two or more job queues working on the same database!
+		change := bson.M{"$set": bson.M{"state": jobqueue.Failed, "completed": time.Now().UnixNano()}}
+		_, err = s.coll.UpdateAll(
+			bson.M{"state": jobqueue.Working},
+			change,
+		)
+	}
+
 	return s.wrapError(err)
 }
 

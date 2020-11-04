@@ -25,7 +25,7 @@ func NewInMemoryStore() *InMemoryStore {
 }
 
 // Start the store.
-func (st *InMemoryStore) Start() error {
+func (st *InMemoryStore) Start(_ StartupBehaviour) error {
 	return nil
 }
 
