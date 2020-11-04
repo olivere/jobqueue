@@ -27,7 +27,7 @@ type Manager struct {
 	backoff BackoffFunc
 
 	mu          sync.Mutex           // guards the following block
-	tm          map[string]Processor // maps topic to processor
+	tm          map[string]Processor // maps topic to Processor
 	concurrency map[int]int          // number of parallel workers
 	working     map[int]int          // number of busy workers
 	started     bool

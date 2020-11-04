@@ -17,8 +17,8 @@ func ExampleManager() {
 
 	// Register the processor for topic "crawl"
 	jobDone := make(chan struct{}, 1)
-	err := m.Register("crawl", func(args ...interface{}) error {
-		url, _ := args[0].(string)
+	err := m.Register("crawl", func(job *jobqueue.Job) error {
+		url, _ := job.Args[0].(string)
 		fmt.Printf("Crawl %s\n", url)
 		jobDone <- struct{}{}
 		return nil

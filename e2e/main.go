@@ -157,7 +157,7 @@ func logger(m *jobqueue.Manager, d time.Duration) {
 
 func makeProcessor(topic string, failureRate float64, runTime time.Duration) jobqueue.Processor {
 	runTimeNanos := runTime.Nanoseconds()
-	return func(args ...interface{}) error {
+	return func(job *jobqueue.Job) error {
 		time.Sleep(time.Duration(rand.Int63n(runTimeNanos)) * time.Nanosecond)
 		if rand.Float64() < failureRate {
 			return errProcessorFailed
