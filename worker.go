@@ -51,7 +51,7 @@ func (w *worker) process(job *Job) error {
 	w.m.testJobStarted() // testing hook
 
 	// Execute the job
-	err := p(job.Args...)
+	err := p(job)
 	if err != nil {
 		if job.Retry >= job.MaxRetry {
 			// Failed

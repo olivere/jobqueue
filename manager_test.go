@@ -41,7 +41,7 @@ func TestManagerDefaults(t *testing.T) {
 
 func TestManagerRegisterDuplicateTopic(t *testing.T) {
 	m := New()
-	f := func(args ...interface{}) error { return nil }
+	f := func(job *Job) error { return nil }
 	err := m.Register("topic", f)
 	if err != nil {
 		t.Fatalf("Register failed with %v", err)
@@ -93,13 +93,13 @@ func TestJobSuccess(t *testing.T) {
 	m.testJobStarted = func() { started <- struct{}{} }
 	m.testJobSucceeded = func() { succeeded <- struct{}{} }
 
-	f := func(args ...interface{}) error {
-		if len(args) != 1 {
-			return fmt.Errorf("expected len(args) == 1, have %d", len(args))
+	f := func(job *Job) error {
+		if len(job.Args) != 1 {
+			return fmt.Errorf("expected len(args) == 1, have %d", len(job.Args))
 		}
-		s, ok := args[0].(string)
+		s, ok := job.Args[0].(string)
 		if !ok {
-			return fmt.Errorf("expected type of 1st arg == string, have %T", args[0])
+			return fmt.Errorf("expected type of 1st arg == string, have %T", job.Args[0])
 		}
 		if have, want := s, "Hello"; have != want {
 			return fmt.Errorf("expected 1st arg = %q, have %q", want, have)
@@ -160,13 +160,13 @@ func TestJobFailure(t *testing.T) {
 	m.testJobStarted = func() { started <- struct{}{} }
 	m.testJobFailed = func() { failed <- struct{}{} }
 
-	f := func(args ...interface{}) error {
-		if len(args) != 1 {
-			return fmt.Errorf("expected len(args) == 1, have %d", len(args))
+	f := func(job *Job) error {
+		if len(job.Args) != 1 {
+			return fmt.Errorf("expected len(args) == 1, have %d", len(job.Args))
 		}
-		s, ok := args[0].(string)
+		s, ok := job.Args[0].(string)
 		if !ok {
-			return fmt.Errorf("expected type of 1st arg == string, have %T", args[0])
+			return fmt.Errorf("expected type of 1st arg == string, have %T", job.Args[0])
 		}
 		if have, want := s, "Hello"; have != want {
 			return fmt.Errorf("expected 1st arg = %q, have %q", want, have)
@@ -234,7 +234,7 @@ func TestJobSuccessAfterRetry(t *testing.T) {
 	m.testJobSucceeded = func() { succeeded <- struct{}{} }
 
 	var call int
-	f := func(args ...interface{}) error {
+	f := func(_ *Job) error {
 		call++
 		jobDone <- struct{}{}
 		// only fail on first call

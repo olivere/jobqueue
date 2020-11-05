@@ -5,4 +5,5 @@
 package jobqueue
 
 // Processor is responsible to process a job for a certain topic.
-type Processor func(...interface{}) error
+// Use job.Args to access the parameters.
+type Processor func(*Job) error

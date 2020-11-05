@@ -73,13 +73,13 @@ func TestMySQLJobSuccess(t *testing.T) {
 
 	m := jobqueue.New(jobqueue.SetStore(st))
 
-	f := func(args ...interface{}) error {
-		if len(args) != 1 {
-			return fmt.Errorf("expected len(args) == 1, have %d", len(args))
+	f := func(job *jobqueue.Job) error {
+		if len(job.Args) != 1 {
+			return fmt.Errorf("expected len(args) == 1, have %d", len(job.Args))
 		}
-		s, ok := args[0].(string)
+		s, ok := job.Args[0].(string)
 		if !ok {
-			return fmt.Errorf("expected type of 1st arg == string, have %T", args[0])
+			return fmt.Errorf("expected type of 1st arg == string, have %T", job.Args[0])
 		}
 		if have, want := s, "Hello"; have != want {
 			return fmt.Errorf("expected 1st arg = %q, have %q", want, have)
