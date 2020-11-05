@@ -250,28 +250,31 @@ func (s *Store) wrapError(err error) error {
 // Start is called when the manager starts up.
 // We ensure that stale jobs are marked as failed so that we have place
 // for new jobs.
-func (s *Store) Start() error {
+func (s *Store) Start(b jobqueue.StartupBehaviour) error {
 	s.stmtOnce.Do(s.initStmt)
 
-	ctx := context.Background()
-	err := internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(
-			ctx,
-			`UPDATE jobqueue_jobs SET state = ?, completed = ? WHERE state = ?`,
-			jobqueue.Failed,
-			time.Now().UnixNano(),
-			jobqueue.Working,
-		)
+	if b == jobqueue.MarkAsFailed {
+		ctx := context.Background()
+		err := internal.RunInTxWithRetry(ctx, s.db, func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(
+				ctx,
+				`UPDATE jobqueue_jobs SET state = ?, completed = ? WHERE state = ?`,
+				jobqueue.Failed,
+				time.Now().UnixNano(),
+				jobqueue.Working,
+			)
+			if err != nil {
+				return err
+			}
+			return nil
+		}, func(err error) bool {
+			return internal.IsDeadlock(err)
+		})
 		if err != nil {
-			return err
+			return s.wrapError(err)
 		}
-		return nil
-	}, func(err error) bool {
-		return internal.IsDeadlock(err)
-	})
-	if err != nil {
-		return s.wrapError(err)
 	}
+
 	return nil
 }
 

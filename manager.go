@@ -26,15 +26,16 @@ type Manager struct {
 	st      Store // persistent storage
 	backoff BackoffFunc
 
-	mu          sync.Mutex           // guards the following block
-	tm          map[string]Processor // maps topic to Processor
-	concurrency map[int]int          // number of parallel workers
-	working     map[int]int          // number of busy workers
-	started     bool
-	workers     map[int][]*worker
-	stopSched   chan struct{} // stop signal for scheduler
-	workersWg   sync.WaitGroup
-	jobc        map[int]chan *Job
+	mu               sync.Mutex           // guards the following block
+	tm               map[string]Processor // maps topic to processor
+	concurrency      map[int]int          // number of parallel workers
+	working          map[int]int          // number of busy workers
+	started          bool
+	workers          map[int][]*worker
+	stopSched        chan struct{} // stop signal for scheduler
+	workersWg        sync.WaitGroup
+	jobc             map[int]chan *Job
+	startupBehaviour StartupBehaviour // what happens to the existing jobs when starting up
 
 	testManagerStarted   func() // testing hook
 	testManagerStopped   func() // testing hook
@@ -57,6 +58,7 @@ func New(options ...ManagerOption) *Manager {
 		tm:                   make(map[string]Processor),
 		concurrency:          map[int]int{0: defaultConcurrency},
 		working:              map[int]int{0: 0},
+		startupBehaviour:     None,
 		testManagerStarted:   nop,
 		testManagerStopped:   nop,
 		testSchedulerStarted: nop,
@@ -118,6 +120,28 @@ func SetConcurrency(rank, n int) ManagerOption {
 	}
 }
 
+// StartupBehaviour specifies the behaviour of the Manager at startup.
+type StartupBehaviour int
+
+const (
+	// None doesn't touch the job queue when starting up.
+	None StartupBehaviour = iota
+	// MarkAsFailed will mark all working jobs as failed when starting up.
+	MarkAsFailed
+)
+
+// SetStartupBehaviour specifies how an existing jobqueue will be processed
+// during startup of a new Manager.
+//
+// The None option is the default, and it won't touch the jobqueue at all.
+//
+// The MarkAsFailed option will mark all running jobs as failed.
+func SetStartupBehaviour(b StartupBehaviour) ManagerOption {
+	return func(m *Manager) {
+		m.startupBehaviour = b
+	}
+}
+
 // Register registers a topic and the associated processor for jobs with
 // that topic.
 func (m *Manager) Register(topic string, p Processor) error {
@@ -141,7 +165,7 @@ func (m *Manager) Start() error {
 	}
 
 	// Initialize Store
-	err := m.st.Start()
+	err := m.st.Start(m.startupBehaviour)
 	if err != nil {
 		return err
 	}

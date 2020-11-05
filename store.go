@@ -20,7 +20,7 @@ type Store interface {
 	// Start is called when the manager starts up.
 	// This is a good time for cleanup. E.g. a persistent store might moved
 	// crashed jobs from a previous run into the Failed state.
-	Start() error
+	Start(StartupBehaviour) error
 
 	// Create adds a job to the store.
 	Create(context.Context, *Job) error
