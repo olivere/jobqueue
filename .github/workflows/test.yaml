@@ -4,18 +4,22 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.14.x, 1.15.x]
-        platform: [ubuntu-latest]
-    name: Run ${{ matrix.go-version }} on ${{ matrix.platform }}
-    runs-on: ${{ matrix.platform }}
+        go-version: [1.15.x, 1.16.x]
+        os: [ubuntu-latest]
+    name: Run ${{ matrix.go-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
     - name: "Setup Go ${{ matrix.go-version }}"
-      uses: actions/setup-go@v2.1.3
+      uses: actions/setup-go@v2
       with:
         go-version: ${{ matrix.go-version }}
     - name: "Checkout"
       uses: actions/checkout@v2
     - name: "Start docker-compose"
       run: docker-compose -f docker-compose.yml up -d
+    - name: Wait for infrastructure
+      run: |
+        while ! nc -z localhost 3306; do sleep 1; done
+        while ! nc -z localhost 27017; do sleep 1; done
     - name: "Run tests"
       run: go test -race -v ./...
