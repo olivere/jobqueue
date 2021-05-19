@@ -2,9 +2,9 @@
 
 Jobqueue manages running and scheduling jobs (think Sidekiq or Resque).
 
-[![Build Status](https://travis-ci.org/olivere/jobqueue.svg?branch=master)](https://travis-ci.org/olivere/jobqueue)
-[![Godoc](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](http://godoc.org/github.com/olivere/jobqueue)
-[![license](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](https://raw.githubusercontent.com/olivere/jobqueue/master/LICENSE)
+[![Test](https://github.com/olivere/jobqueue/actions/workflows/test.yaml/badge.svg)](https://github.com/olivere/jobqueue/actions/workflows/test.yaml)
+[![Docs](http://img.shields.io/badge/godoc-reference-blue.svg?style=flat)](https://pkg.go.dev/github.com/olivere/jobqueue)
+[![License](http://img.shields.io/badge/license-MIT-red.svg?style=flat)](https://raw.githubusercontent.com/olivere/jobqueue/master/LICENSE)
 
 ## Prerequisites
 
@@ -75,8 +75,8 @@ Ensure the tests succeed with `go test`. You may have to install dependencies.
 You can run a simulation of a real worker like so:
 
 ```sh
-$ cd e2e
-$ go run main.go
+cd e2e
+go run main.go
 ```
 
 Play with the options: `go run e2e/main.go -h`.
@@ -84,9 +84,8 @@ Play with the options: `go run e2e/main.go -h`.
 Then open a second console and watch the worker doing its job:
 
 ```sh
-$ cd ui
-$ go run main.go
-
+cd ui
+go run main.go
 ```
 
 Then open your web browser at [http://127.0.0.1:12345](http://127.0.0.1:12345).
